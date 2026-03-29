@@ -13,6 +13,9 @@ from vol_osd.audio import (
     move_to_sink,
     send,
     set_focus,
+    sink_lower,
+    sink_mute,
+    sink_raise,
     validate_focus,
     volume_lower,
     volume_mute,
@@ -75,6 +78,21 @@ def cmd_sink(direction: str) -> None:
     _show()
 
 
+def cmd_sink_raise() -> None:
+    sink_raise()
+    _show()
+
+
+def cmd_sink_lower() -> None:
+    sink_lower()
+    _show()
+
+
+def cmd_sink_mute() -> None:
+    sink_mute()
+    _show()
+
+
 def cmd_start() -> None:
     import time
 
@@ -122,6 +140,9 @@ Commands:
   cycle-prev   select previous audio stream
   sink-next    move focused app to next output device
   sink-prev    move focused app to previous output device
+  sink-raise   raise default sink volume 5%
+  sink-lower   lower default sink volume 5%
+  sink-mute    toggle default sink mute
   show         show OSD without changing anything
   start        start the vol-osd daemon
   kill         stop the vol-osd daemon
@@ -149,6 +170,12 @@ def main() -> None:
             cmd_sink("next")
         case "sink-prev":
             cmd_sink("prev")
+        case "sink-raise":
+            cmd_sink_raise()
+        case "sink-lower":
+            cmd_sink_lower()
+        case "sink-mute":
+            cmd_sink_mute()
         case "show":
             _show()
         case "start":

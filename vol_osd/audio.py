@@ -55,56 +55,42 @@ def get_sink_ids() -> list[str]:
 
 
 def get_streams() -> list[dict]:
-    """Return [{id, name, vol, muted, sink_id, sink_name}]."""
-    lines = _run(["pactl", "list", "sink-inputs"])
+    """Return [{id, name, vol, muted, sink_id, sink_name}] using pw-dump."""
+    import json
+
+    try:
+        output = subprocess.check_output(["pw-dump"], stderr=subprocess.DEVNULL)
+        data = json.loads(output)
+    except Exception:
+        return []
+
+    streams = []
     sink_names = get_sink_names()
 
-    streams: list[dict] = []
-    cur: dict = {}
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        if props.get("media.class") != "Stream/Output/Audio":
+            continue
 
-    def flush() -> None:
-        if cur.get("id") is not None:
-            sid = cur.get("sink_id", "")
-            cur["sink_name"] = sink_names.get(sid, f"sink-{sid}")
-            if not cur["name"]:
-                cur["name"] = f"stream-{cur['id']}"
-            streams.append(dict(cur))
+        node_id = obj.get("id")
+        name = props.get("application.name", props.get("media.name", "unknown"))
 
-    for line in lines:
-        if line.startswith("Sink Input #"):
-            flush()
-            cur = {
-                "id": int(line.split("#")[1].strip()),
-                "name": "",
-                "vol": 1.0,
-                "muted": False,
-                "sink_id": "",
+        vol = props.get("meta.volume", 1.0)
+        muted = props.get("mute", False)
+
+        sink_id = props.get("target.object", "")
+
+        streams.append(
+            {
+                "id": node_id,
+                "name": name,
+                "vol": vol,
+                "muted": muted,
+                "sink_id": str(sink_id),
+                "sink_name": sink_names.get(str(sink_id), ""),
             }
-            continue
-        if not cur:
-            continue
-        s = line.strip()
-        if s.startswith("Sink:"):
-            cur["sink_id"] = s.split(":", 1)[1].strip()
-        elif s.startswith("Mute:"):
-            cur["muted"] = s.split(":", 1)[1].strip().lower() == "yes"
-        elif s.startswith("Volume:"):
-            for part in s.split("/"):
-                part = part.strip()
-                if part.endswith("%"):
-                    try:
-                        cur["vol"] = int(part[:-1]) / 100.0
-                    except ValueError:
-                        pass
-                    break
-        elif s.startswith("application.name") and not cur["name"]:
-            cur["name"] = s.split("=", 1)[1].strip().strip('"')
-        elif s.startswith("media.name") and not cur["name"]:
-            cur["name"] = s.split("=", 1)[1].strip().strip('"')
-        elif s.startswith("node.name") and not cur["name"]:
-            cur["name"] = s.split("=", 1)[1].strip().strip('"')
+        )
 
-    flush()
     return streams
 
 
@@ -185,6 +171,39 @@ def volume_mute(fid: str) -> None:
 
 def move_to_sink(input_id: str, sink_id: str) -> None:
     _call(["pactl", "move-sink-input", input_id, sink_id])
+
+
+# ── sink (output device) volume ───────────────────────────────────────────────
+
+
+def get_default_sink() -> str:
+    """Return default sink ID (e.g., '62')."""
+    lines = _run(["wpctl", "status"])
+    for line in lines:
+        if "* " in line and ". " in line:
+            parts = line.strip().split()
+            for i, p in enumerate(parts):
+                if p == "*" and i + 1 < len(parts):
+                    return parts[i + 1].rstrip(".")
+    return ""
+
+
+def sink_raise() -> None:
+    sid = get_default_sink()
+    if sid:
+        _call(["wpctl", "set-volume", sid, f"{STEP}+"])
+
+
+def sink_lower() -> None:
+    sid = get_default_sink()
+    if sid:
+        _call(["wpctl", "set-volume", sid, f"{STEP}-"])
+
+
+def sink_mute() -> None:
+    sid = get_default_sink()
+    if sid:
+        _call(["wpctl", "set-mute", sid, "toggle"])
 
 
 # ── socket IPC ───────────────────────────────────────────────────────────────

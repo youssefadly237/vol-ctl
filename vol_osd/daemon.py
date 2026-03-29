@@ -8,11 +8,6 @@ import sys
 import threading
 from ctypes import CDLL
 
-from gi.repository import GLib, Gtk, Gdk
-from gi.repository import Gtk4LayerShell as LayerShell
-
-from vol_osd.audio import SOCKET_PATH, get_focus, get_streams
-
 try:
     CDLL("libgtk4-layer-shell.so")
 except OSError:
@@ -31,6 +26,10 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
 
+from gi.repository import GLib, Gtk, Gdk
+from gi.repository import Gtk4LayerShell as LayerShell
+
+from vol_osd.audio import SOCKET_PATH, get_focus, get_streams
 
 HIDE_DELAY = 1800  # ms
 
@@ -99,6 +98,7 @@ class OsdWindow:
         self.win = Gtk.ApplicationWindow(application=app)
         self.win.set_decorated(False)
         self.win.set_resizable(False)
+        self.win.set_default_size(320, 200)
 
         LayerShell.init_for_window(self.win)
         LayerShell.set_layer(self.win, LayerShell.Layer.OVERLAY)

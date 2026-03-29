@@ -5,7 +5,7 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-# uv tool install puts binaries here
+Environment=LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so.0
 ExecStart=%h/.local/bin/vol-osd
 Restart=on-failure
 RestartSec=2
