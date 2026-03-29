@@ -44,51 +44,57 @@ vol-ctl install system d
 or whatever instead of manually doing that if manual
 ```
 
-
 ## niri keybinds
+
+Copy `vol-ctl-wrapper.sh` to `~/.scripts/`, then use `spawn-sh`:
 
 ```kdl
 binds {
     // knob — adjust focused app
-    XF86AudioRaiseVolume { spawn-sh "vol-ctl raise"; }
-    XF86AudioLowerVolume { spawn-sh "vol-ctl lower"; }
-    XF86AudioMute        { spawn-sh "vol-ctl mute"; }
+    XF86AudioRaiseVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh raise"; }
+    XF86AudioLowerVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh lower"; }
+    XF86AudioMute        { spawn-sh "~/.scripts/vol-ctl-wrapper.sh mute"; }
 
     // Mod+knob — adjust default sink (master volume)
-    Mod+XF86AudioRaiseVolume { spawn-sh "vol-ctl sink-raise"; }
-    Mod+XF86AudioLowerVolume { spawn-sh "vol-ctl sink-lower"; }
-    Mod+XF86AudioMute        { spawn-sh "vol-ctl sink-mute"; }
+    Mod+XF86AudioRaiseVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-raise"; }
+    Mod+XF86AudioLowerVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-lower"; }
+    Mod+XF86AudioMute        { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-mute"; }
 
     // Mod+Shift+knob — cycle between apps
-    Mod+Shift+XF86AudioRaiseVolume { spawn-sh "vol-ctl cycle-next"; }
-    Mod+Shift+XF86AudioLowerVolume { spawn-sh "vol-ctl cycle-prev"; }
+    Mod+Shift+XF86AudioRaiseVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh cycle-next"; }
+    Mod+Shift+XF86AudioLowerVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh cycle-prev"; }
 
     // Ctrl+Mod+knob — move focused app to next/prev output device
-    Ctrl+Mod+XF86AudioRaiseVolume { spawn-sh "vol-ctl sink-next"; }
-    Ctrl+Mod+XF86AudioLowerVolume { spawn-sh "vol-ctl sink-prev"; }
+    Ctrl+Mod+XF86AudioRaiseVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-next"; }
+    Ctrl+Mod+XF86AudioLowerVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-prev"; }
 }
 ```
 
 ## vol-ctl commands
 
-| Command       | Effect                                      |
-| ------------- | ------------------------------------------ |
-| `raise`       | +5% focused app                             |
-| `lower`       | -5% focused app                             |
-| `mute`        | toggle mute                                 |
-| `cycle-next`  | select next stream                          |
-| `cycle-prev`  | select previous stream                      |
-| `sink-next`   | move focused app to next output device      |
-| `sink-prev`   | move focused app to previous output device  |
-| `sink-raise`  | +5% default sink (master)                  |
-| `sink-lower`  | -5% default sink (master)                  |
-| `sink-mute`   | toggle default sink mute                    |
-| `show`        | show OSD only                               |
-| `start`       | start daemon manually                       |
+| Command      | Effect                                     |
+| ------------ | ------------------------------------------ |
+| `raise`      | +5% focused app                            |
+| `lower`      | -5% focused app                            |
+| `mute`       | toggle mute                                |
+| `cycle-next` | select next stream                         |
+| `cycle-prev` | select previous stream                     |
+| `sink-next`  | move focused app to next output device     |
+| `sink-prev`  | move focused app to previous output device |
+| `sink-raise` | +5% default sink (master)                  |
+| `sink-lower` | -5% default sink (master)                  |
+| `sink-mute`  | toggle default sink mute                   |
+| `show`       | show OSD only                              |
+| `start`      | start daemon manually                      |
 | `kill`       | stop daemon                                |
 
-## Upgrade
+## uv force install
 
 ```bash
-uv tool upgrade vol-osd
+uv tool install . \
+  --force \
+  --reinstall \
+  --refresh \
+  --no-cache \
+  --no-binary
 ```

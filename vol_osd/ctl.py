@@ -63,18 +63,24 @@ def cmd_cycle(direction: str) -> None:
 
 
 def cmd_sink(direction: str) -> None:
-    fid = validate_focus()
-    if not fid:
-        _show()
-        return
-    sinks = get_sink_ids()
-    if not sinks:
-        _show()
-        return
-    cur_sink = get_input_sink(fid)
-    new_sink = cycle(sinks, cur_sink, direction)
-    if new_sink:
-        move_to_sink(fid, new_sink)
+    with open("/tmp/ctl_debug.txt", "w") as f:
+        fid = validate_focus()
+        f.write(f"fid={fid}\n")
+        if not fid:
+            _show()
+            return
+        sinks = get_sink_ids()
+        f.write(f"sinks={sinks}\n")
+        if not sinks:
+            _show()
+            return
+        cur_sink = get_input_sink(fid)
+        f.write(f"cur_sink={cur_sink}\n")
+        new_sink = cycle(sinks, cur_sink, direction)
+        f.write(f"new_sink={new_sink}\n")
+        if new_sink:
+            move_to_sink(fid, new_sink)
+        f.write(f"done\n")
     _show()
 
 
@@ -94,16 +100,20 @@ def cmd_sink_mute() -> None:
 
 
 def cmd_start() -> None:
+    import os
     import time
 
     if os.path.exists(SOCKET_PATH):
         print("vol-osd already running")
         return
+    env = os.environ.copy()
+    env["LD_PRELOAD"] = "/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so.0"
     proc = subprocess.Popen(
         ["vol-osd"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
+        env=env,
     )
     time.sleep(0.5)
     if proc.poll() is not None:
@@ -150,6 +160,11 @@ Commands:
 
 
 def main() -> None:
+    import sys
+
+    with open("/tmp/ctl_main.txt", "w") as f:
+        f.write(f"main: sys.argv={sys.argv}\n")
+        f.flush()
     if len(sys.argv) < 2:
         _show()
         return
