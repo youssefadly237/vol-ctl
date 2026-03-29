@@ -1,0 +1,14 @@
+[Unit]
+Description=vol-osd — per-app volume OSD daemon
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# uv tool install puts binaries here
+ExecStart=%h/.local/bin/vol-osd
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
