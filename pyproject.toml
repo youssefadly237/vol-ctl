@@ -16,3 +16,12 @@ packages = ["vol_osd"]
 [project.scripts]
 vol-osd = "vol_osd.daemon:main"
 vol-ctl = "vol_osd.ctl:main"
+
+[tool.ruff.lint]
+ignore = ["E402"]
+
+[[tool.ty.overrides]]
+include = ["vol_osd/*.py"]
+
+[tool.ty.overrides.analysis]
+allowed-unresolved-imports = ["gi.repository.*"]
