@@ -31,10 +31,105 @@ def _call(args: list[str]) -> None:
 # ── sinks (output devices) ───────────────────────────────────────────────────
 
 
+_PWDUMP_CACHE: list[dict] | None = None
+
+
+def _get_pw_dump() -> list[dict]:
+    """Get pw-dump data, cached for efficiency."""
+    global _PWDUMP_CACHE
+    if _PWDUMP_CACHE is None:
+        import json
+
+        try:
+            output = subprocess.check_output(
+                ["pw-dump"], stderr=subprocess.DEVNULL, timeout=5
+            )
+            _PWDUMP_CACHE = json.loads(output)
+        except Exception:
+            _PWDUMP_CACHE = []
+    return _PWDUMP_CACHE
+
+
+def _invalidate_cache() -> None:
+    """Invalidate pw-dump cache."""
+    global _PWDUMP_CACHE
+    _PWDUMP_CACHE = None
+
+
 def get_sink_names() -> dict[str, str]:
-    """Return {sink_id: description} using wpctl."""
-    lines = _run(["wpctl", "status"])
+    """Return {pwdump_id: description} from pw-dump."""
+    data = _get_pw_dump()
     sinks: dict[str, str] = {}
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        if props.get("media.class") == "Audio/Sink":
+            node_id = str(obj.get("id"))
+            name = props.get("node.description") or props.get("node.name", "")
+            sinks[node_id] = name
+    return sinks
+
+
+def _get_sink_node_names() -> dict[str, str]:
+    """Return {pwdump_id: node_name} from pw-dump for pw-metadata."""
+    data = _get_pw_dump()
+    sink_node_names = {}
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        if props.get("media.class") == "Audio/Sink":
+            sink_node_names[str(obj.get("id"))] = props.get("node.name", "")
+    return sink_node_names
+
+
+def _get_pwpdump_to_wpctl_sink_map() -> dict[str, str]:
+    """Map pw-dump sink IDs to wpctl sink IDs using node names."""
+    import json
+
+    try:
+        data = json.loads(
+            subprocess.check_output(["pw-dump"], stderr=subprocess.DEVNULL)
+        )
+    except Exception:
+        return {}
+
+    wpctl_status = _run(["wpctl", "status"])
+    wpctl_sinks = {}
+    in_sinks = False
+    for line in wpctl_status:
+        if "├─ Sinks:" in line:
+            in_sinks = True
+            continue
+        if in_sinks and "├─ Sources:" in line:
+            break
+        if in_sinks and "[vol:" in line:
+            inner = line[2:].strip() if line.startswith(" │") else line.strip()
+            vol_idx = inner.find("[vol:")
+            if vol_idx > 0:
+                name_part = inner[:vol_idx].strip()
+                if name_part.startswith("*"):
+                    name_part = name_part[1:].strip()
+                wpctl_id = name_part.split(".")[0]
+                wpctl_sinks[name_part.split(".", 1)[1].strip().lower()] = wpctl_id
+
+    mapping = {}
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        if props.get("media.class") == "Audio/Sink":
+            pwdump_id = str(obj.get("id"))
+            name = (props.get("node.description") or props.get("node.name", "")).lower()
+            if name in wpctl_sinks:
+                mapping[pwdump_id] = wpctl_sinks[name]
+    return mapping
+
+
+def get_sink_ids() -> list[str]:
+    return list(get_sink_names().keys())
+
+
+def _get_driver_to_sink_map() -> dict[str, str]:
+    """Map driver-id to sink ID from wpctl status (real sinks only)."""
+    # Get sink IDs from wpctl status by parsing it directly
+    lines = _run(["wpctl", "status"])
+    sink_ids = set()
     in_sinks = False
     for line in lines:
         if "├─ Sinks:" in line:
@@ -50,29 +145,19 @@ def get_sink_names() -> dict[str, str]:
                 if name_part.startswith("*"):
                     name_part = name_part[1:].strip()
                 sink_id = name_part.split(".")[0]
-                sink_name = (
-                    name_part.split(".", 1)[1].strip()
-                    if "." in name_part
-                    else name_part
-                )
-                sinks[sink_id] = sink_name
-    return sinks
+                sink_ids.add(sink_id)
 
-
-def get_sink_ids() -> list[str]:
-    return list(get_sink_names().keys())
-
-
-def _get_driver_to_sink_map() -> dict[str, str]:
-    """Map driver-id to virtual sink ID (e.g., 65 -> 35 for Snapcast)."""
+    data = _get_pw_dump()
     mapping = {}
-    sink_names = get_sink_names()
-    for sink_id in sink_names:
-        lines = _run(["wpctl", "inspect", sink_id])
-        for line in lines:
-            if "node.driver-id" in line:
-                driver_id = line.split("=")[1].strip().strip('"')
-                mapping[driver_id] = sink_id
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        media_class = props.get("media.class", "")
+        if "Sink" in media_class:
+            node_id = str(obj.get("id"))
+            driver_id = props.get("node.driver-id")
+            # Only map to sinks that appear in wpctl status
+            if driver_id and node_id in sink_ids:
+                mapping[str(driver_id)] = node_id
     return mapping
 
 
@@ -80,46 +165,66 @@ def _get_driver_to_sink_map() -> dict[str, str]:
 
 
 def get_streams() -> list[dict]:
-    """Return [{id, name, vol, muted, sink_id, sink_name}] using pw-dump + wpctl."""
+    """Return [{id, name, vol, muted, sink_id, sink_name}] using pw-dump only."""
     import json
 
     try:
-        output = subprocess.check_output(["pw-dump"], stderr=subprocess.DEVNULL)
-        data = json.loads(output)
+        data = json.loads(
+            subprocess.check_output(["pw-dump"], stderr=subprocess.DEVNULL)
+        )
     except Exception:
         return []
 
-    streams = []
-    sink_names = get_sink_names()
-
+    # Build sink lookup maps
+    sink_names = {}
+    sink_node_names = {}
+    driver_to_pwdump = {}
     for obj in data:
         props = obj.get("info", {}).get("props", {})
+        if props.get("media.class") == "Audio/Sink":
+            pwdump_id = str(obj.get("id"))
+            sink_names[pwdump_id] = props.get("node.description") or props.get(
+                "node.name", ""
+            )
+            sink_node_names[props.get("node.name")] = pwdump_id
+            driver_id = props.get("node.driver-id")
+            if driver_id:
+                driver_to_pwdump[str(driver_id)] = pwdump_id
+            else:
+                # Sinks without driver-id map to themselves
+                driver_to_pwdump[pwdump_id] = pwdump_id
+
+    streams = []
+    for obj in data:
+        info = obj.get("info", {})
+        props = info.get("props", {})
         if props.get("media.class") != "Stream/Output/Audio":
             continue
 
         node_id = obj.get("id")
-        name = props.get("application.name", props.get("media.name", "unknown"))
+        name = props.get("application.name") or props.get("media.name", "unknown")
 
-        vol = 1.0
-        muted = False
-        try:
-            vol_output = subprocess.check_output(
-                ["wpctl", "get-volume", str(node_id)], stderr=subprocess.DEVNULL
-            ).decode()
-            vol = float(vol_output.split(":")[1].strip())
-        except Exception:
-            pass
+        pw_props = (info.get("params", {}).get("Props") or [{}])[0]
+        ch_vols = pw_props.get("channelVolumes", [1.0])
+        vol_cubic = sum(ch_vols) / len(ch_vols) if ch_vols else 1.0
+        vol = vol_cubic ** (1 / 3)
+        muted = pw_props.get("mute", False)
 
-        try:
-            mute_output = subprocess.check_output(
-                ["wpctl", "get-mute", str(node_id)], stderr=subprocess.DEVNULL
-            ).decode()
-            muted = "yes" in mute_output.lower() or "1" in mute_output
-        except Exception:
-            pass
+        # Resolve sink_id
+        sink_id = props.get("target.object")
+        if not sink_id:
+            driver_id = props.get("node.driver-id")
+            if driver_id:
+                sink_id = driver_to_pwdump.get(str(driver_id))
 
-        sink_id = props.get("target.object", "") or get_input_sink(str(node_id))
-        sink_name = sink_names.get(str(sink_id), "")
+        if sink_id:
+            sink_id = str(sink_id)
+            if sink_id.isdigit():
+                pass  # already a pwdump id
+            else:
+                sink_id = sink_node_names.get(sink_id, "")
+        else:
+            sink_id = ""
 
         streams.append(
             {
@@ -127,8 +232,8 @@ def get_streams() -> list[dict]:
                 "name": name,
                 "vol": vol,
                 "muted": muted,
-                "sink_id": str(sink_id),
-                "sink_name": sink_name,
+                "sink_id": sink_id,
+                "sink_name": sink_names.get(sink_id, ""),
             }
         )
 
@@ -140,14 +245,46 @@ def get_stream_ids() -> list[str]:
 
 
 def get_input_sink(input_id: str) -> str:
-    """Return sink ID currently used by a stream (pw-node-id) using wpctl."""
-    lines = _run(["wpctl", "inspect", input_id])
-    driver_id = ""
-    for line in lines:
-        if "node.driver-id" in line:
-            driver_id = line.split("=")[1].strip().strip('"')
-    driver_map = _get_driver_to_sink_map()
-    return driver_map.get(driver_id, driver_id)
+    """Return sink pwdump_id currently used by a stream from pw-dump."""
+    data = _get_pw_dump()
+
+    # Build driver-id -> pwdump sink ID mapping
+    driver_to_pwdump = {}
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        if props.get("media.class") == "Audio/Sink":
+            pwdump_id = str(obj.get("id"))
+            driver_id = props.get("node.driver-id")
+            if driver_id:
+                driver_to_pwdump[str(driver_id)] = pwdump_id
+            else:
+                # Sinks without driver-id map to themselves
+                driver_to_pwdump[pwdump_id] = pwdump_id
+
+    sink_node_names = {}
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        if props.get("media.class") == "Audio/Sink":
+            sink_node_names[props.get("node.name")] = str(obj.get("id"))
+
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        if str(obj.get("id")) == input_id:
+            if props.get("media.class") != "Stream/Output/Audio":
+                return ""
+
+            target = props.get("target.object")
+            if target:
+                target_str = str(target)
+                if target_str.isdigit():
+                    return target_str
+                return sink_node_names.get(target_str, "")
+
+            driver_id = props.get("node.driver-id")
+            if driver_id:
+                return driver_to_pwdump.get(str(driver_id), str(driver_id))
+
+    return ""
 
 
 # ── focus state ──────────────────────────────────────────────────────────────
@@ -247,18 +384,20 @@ def _get_sink_input_id(stream_id: str) -> str:
     return ""
 
 
-def move_to_sink(input_id: str, sink_id: str) -> None:
-    import sys
+def _get_wpctl_to_pwpdump_sink_map() -> dict[str, str]:
+    """Map wpctl sink IDs to pw-dump sink IDs using node names."""
+    pwdump_to_wpctl = _get_pwpdump_to_wpctl_sink_map()
+    return {v: k for k, v in pwdump_to_wpctl.items()}
 
-    print(f"DEBUG move_to_sink: input_id={input_id}, sink_id={sink_id}", flush=True)
-    sink_name = _get_sink_name(sink_id)
-    print(f"DEBUG move_to_sink: sink_name={sink_name}", flush=True)
-    if not sink_name:
-        return
-    sink_input_id = _get_sink_input_id(input_id)
-    print(f"DEBUG move_to_sink: sink_input_id={sink_input_id}", flush=True)
-    if sink_input_id:
-        _call(["pactl", "move-sink-input", sink_input_id, sink_name])
+
+def move_to_sink(input_id: str, sink_id: str) -> None:
+    """Move stream to sink using pw-metadata with node name."""
+    sink_node_names = _get_sink_node_names()
+    sink_node_name = sink_node_names.get(sink_id)
+    if sink_node_name:
+        _call(["pw-metadata", input_id, "target.object", sink_node_name])
+        _invalidate_cache()
+        _invalidate_cache()
 
 
 # ── sink (output device) volume ───────────────────────────────────────────────
