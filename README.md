@@ -72,21 +72,23 @@ binds {
 
 ## vol-ctl commands
 
-| Command      | Effect                                     |
-| ------------ | ------------------------------------------ |
-| `raise`      | +5% focused app                            |
-| `lower`      | -5% focused app                            |
-| `mute`       | toggle mute                                |
-| `cycle-next` | select next stream                         |
-| `cycle-prev` | select previous stream                     |
-| `sink-next`  | move focused app to next output device     |
-| `sink-prev`  | move focused app to previous output device |
-| `sink-raise` | +5% default sink (master)                  |
-| `sink-lower` | -5% default sink (master)                  |
-| `sink-mute`  | toggle default sink mute                   |
-| `show`       | show OSD only                              |
-| `start`      | start daemon manually                      |
-| `kill`       | stop daemon                                |
+| Command        | Effect                                      |
+| -------------- | ------------------------------------------ |
+| `raise`        | +5% focused app                            |
+| `lower`        | -5% focused app                            |
+| `mute`         | toggle mute                                 |
+| `cycle-next`   | select next stream                         |
+| `cycle-prev`   | select previous stream                     |
+| `sink-next`    | move focused app to next output device     |
+| `sink-prev`    | move focused app to previous output device |
+| `sink-raise`   | +5% default sink (master)                  |
+| `sink-lower`   | -5% default sink (master)                  |
+| `sink-mute`    | toggle default sink mute                   |
+| `default-next` | cycle default sink to next                 |
+| `default-prev` | cycle default sink to previous             |
+| `show`         | show OSD only                              |
+| `start`        | start daemon manually                       |
+| `kill`         | stop daemon                                |
 
 ## uv force install
 

@@ -7,6 +7,8 @@ import sys
 
 from vol_osd.audio import (
     cycle,
+    default_next,
+    default_prev,
     get_sink_ids,
     get_input_sink,
     get_stream_ids,
@@ -180,6 +182,12 @@ def main() -> None:
             cmd_sink_lower()
         case "sink-mute":
             cmd_sink_mute()
+        case "default-next":
+            default_next()
+            _show()
+        case "default-prev":
+            default_prev()
+            _show()
         case "show":
             _show()
         case "start":

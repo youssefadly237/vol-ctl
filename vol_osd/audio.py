@@ -58,14 +58,42 @@ def _invalidate_cache() -> None:
 
 def get_sink_names() -> dict[str, str]:
     """Return {pwdump_id: description} from pw-dump."""
-    data = _get_pw_dump()
-    sinks: dict[str, str] = {}
+    return {s["id"]: s["name"] for s in get_sinks()}
+
+
+def get_sinks() -> list[dict]:
+    """Return [{id, name, vol, muted}] for all sinks from pw-dump."""
+    import json
+
+    try:
+        data = json.loads(
+            subprocess.check_output(["pw-dump"], stderr=subprocess.DEVNULL)
+        )
+    except Exception:
+        return []
+
+    sinks = []
     for obj in data:
         props = obj.get("info", {}).get("props", {})
         if props.get("media.class") == "Audio/Sink":
-            node_id = str(obj.get("id"))
+            node_id = obj.get("id")
             name = props.get("node.description") or props.get("node.name", "")
-            sinks[node_id] = name
+
+            pw_props = (obj.get("info", {}).get("params", {}).get("Props") or [{}])[0]
+            ch_vols = pw_props.get("channelVolumes", [1.0])
+            vol_cubic = sum(ch_vols) / len(ch_vols) if ch_vols else 1.0
+            vol = vol_cubic ** (1 / 3)
+            muted = pw_props.get("mute", False)
+
+            sinks.append(
+                {
+                    "id": str(node_id),
+                    "name": name,
+                    "vol": vol,
+                    "muted": muted,
+                }
+            )
+
     return sinks
 
 
@@ -404,14 +432,17 @@ def move_to_sink(input_id: str, sink_id: str) -> None:
 
 
 def get_default_sink() -> str:
-    """Return default sink ID (e.g., '62')."""
-    lines = _run(["wpctl", "status"])
-    for line in lines:
-        if "* " in line and ". " in line:
-            parts = line.strip().split()
-            for i, p in enumerate(parts):
-                if p == "*" and i + 1 < len(parts):
-                    return parts[i + 1].rstrip(".")
+    """Return default sink pwdump_id using pactl + pw-dump."""
+    lines = _run(["pactl", "get-default-sink"])
+    if not lines:
+        return ""
+    pactl_name = lines[0].strip()
+
+    sink_node_names = _get_sink_node_names()
+    for pwdump_id, node_name in sink_node_names.items():
+        if node_name == pactl_name:
+            return pwdump_id
+
     return ""
 
 
@@ -419,18 +450,76 @@ def sink_raise() -> None:
     sid = get_default_sink()
     if sid:
         _call(["wpctl", "set-volume", sid, f"{STEP}+", "-l", "1.0"])
+        _invalidate_cache()
 
 
 def sink_lower() -> None:
     sid = get_default_sink()
     if sid:
         _call(["wpctl", "set-volume", sid, f"{STEP}-", "-l", "1.0"])
+        _invalidate_cache()
 
 
 def sink_mute() -> None:
     sid = get_default_sink()
     if sid:
         _call(["wpctl", "set-mute", sid, "toggle"])
+        _invalidate_cache()
+
+
+def _get_default_sink_name() -> str:
+    """Get pactl name of default sink."""
+    lines = _run(["pactl", "get-default-sink"])
+    return lines[0].strip() if lines else ""
+
+
+def set_default_sink(sink_id: str) -> None:
+    """Set default sink by pw-dump ID using pactl."""
+    sink_node_names = _get_sink_node_names()
+    pactl_name = sink_node_names.get(sink_id)
+    if pactl_name:
+        _call(["pactl", "set-default-sink", pactl_name])
+        _invalidate_cache()
+
+
+def default_next() -> None:
+    """Cycle default sink to next."""
+    sinks = get_sink_ids()
+    if not sinks:
+        return
+    current_name = _get_default_sink_name()
+    current_pw_id = None
+    sink_node_names = _get_sink_node_names()
+    for pw_id, node_name in sink_node_names.items():
+        if node_name == current_name:
+            current_pw_id = pw_id
+            break
+
+    if not current_pw_id:
+        current_pw_id = sinks[0]
+
+    next_idx = (sinks.index(current_pw_id) + 1) % len(sinks)
+    set_default_sink(sinks[next_idx])
+
+
+def default_prev() -> None:
+    """Cycle default sink to previous."""
+    sinks = get_sink_ids()
+    if not sinks:
+        return
+    current_name = _get_default_sink_name()
+    current_pw_id = None
+    sink_node_names = _get_sink_node_names()
+    for pw_id, node_name in sink_node_names.items():
+        if node_name == current_name:
+            current_pw_id = pw_id
+            break
+
+    if not current_pw_id:
+        current_pw_id = sinks[0]
+
+    prev_idx = (sinks.index(current_pw_id) - 1) % len(sinks)
+    set_default_sink(sinks[prev_idx])
 
 
 # ── socket IPC ───────────────────────────────────────────────────────────────
