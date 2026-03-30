@@ -108,85 +108,8 @@ def _get_sink_node_names() -> dict[str, str]:
     return sink_node_names
 
 
-def _get_pwpdump_to_wpctl_sink_map() -> dict[str, str]:
-    """Map pw-dump sink IDs to wpctl sink IDs using node names."""
-    import json
-
-    try:
-        data = json.loads(
-            subprocess.check_output(["pw-dump"], stderr=subprocess.DEVNULL)
-        )
-    except Exception:
-        return {}
-
-    wpctl_status = _run(["wpctl", "status"])
-    wpctl_sinks = {}
-    in_sinks = False
-    for line in wpctl_status:
-        if "├─ Sinks:" in line:
-            in_sinks = True
-            continue
-        if in_sinks and "├─ Sources:" in line:
-            break
-        if in_sinks and "[vol:" in line:
-            inner = line[2:].strip() if line.startswith(" │") else line.strip()
-            vol_idx = inner.find("[vol:")
-            if vol_idx > 0:
-                name_part = inner[:vol_idx].strip()
-                if name_part.startswith("*"):
-                    name_part = name_part[1:].strip()
-                wpctl_id = name_part.split(".")[0]
-                wpctl_sinks[name_part.split(".", 1)[1].strip().lower()] = wpctl_id
-
-    mapping = {}
-    for obj in data:
-        props = obj.get("info", {}).get("props", {})
-        if props.get("media.class") == "Audio/Sink":
-            pwdump_id = str(obj.get("id"))
-            name = (props.get("node.description") or props.get("node.name", "")).lower()
-            if name in wpctl_sinks:
-                mapping[pwdump_id] = wpctl_sinks[name]
-    return mapping
-
-
 def get_sink_ids() -> list[str]:
     return list(get_sink_names().keys())
-
-
-def _get_driver_to_sink_map() -> dict[str, str]:
-    """Map driver-id to sink ID from wpctl status (real sinks only)."""
-    # Get sink IDs from wpctl status by parsing it directly
-    lines = _run(["wpctl", "status"])
-    sink_ids = set()
-    in_sinks = False
-    for line in lines:
-        if "├─ Sinks:" in line:
-            in_sinks = True
-            continue
-        if in_sinks and "├─ Sources:" in line:
-            break
-        if in_sinks and "[vol:" in line:
-            inner = line[2:].strip() if line.startswith(" │") else line.strip()
-            vol_idx = inner.find("[vol:")
-            if vol_idx > 0:
-                name_part = inner[:vol_idx].strip()
-                if name_part.startswith("*"):
-                    name_part = name_part[1:].strip()
-                sink_id = name_part.split(".")[0]
-                sink_ids.add(sink_id)
-
-    data = _get_pw_dump()
-    mapping = {}
-    for obj in data:
-        props = obj.get("info", {}).get("props", {})
-        media_class = props.get("media.class", "")
-        if "Sink" in media_class:
-            node_id = str(obj.get("id"))
-            driver_id = props.get("node.driver-id")
-            # Only map to sinks that appear in wpctl status
-            if driver_id and node_id in sink_ids:
-                mapping[str(driver_id)] = node_id
-    return mapping
 
 
 # ── sink-inputs (per-app streams) ────────────────────────────────────────────
@@ -374,57 +297,12 @@ def volume_mute(fid: str) -> None:
     _call(["wpctl", "set-mute", fid, "toggle"])
 
 
-def _get_sink_name(sink_id: str) -> str:
-    """Get pactl sink name from wpctl sink ID (e.g., '160' -> 'bluez_output.78:15:2D:5C:40:89')."""
-    lines = _run(["wpctl", "inspect", sink_id])
-    for line in lines:
-        if "node.name" in line:
-            node_name = line.split("=")[1].strip().strip('"')
-            parts = node_name.split(".")
-            if len(parts) > 1 and parts[-1].isdigit():
-                parts = parts[:-1]
-            result = []
-            for p in parts:
-                if "_" in p and p.count("_") >= 2:
-                    hex_parts = p.split("_")
-                    if all(
-                        len(h) == 2 and all(c in "0123456789ABCDEFabcdef" for c in h)
-                        for h in hex_parts[:3]
-                    ) and all(
-                        len(h) == 2 and all(c in "0123456789ABCDEFabcdef" for c in h)
-                        for h in hex_parts[3:]
-                    ):
-                        result.append(p.replace("_", ":"))
-                    else:
-                        result.append(p)
-                else:
-                    result.append(p)
-            return ".".join(result)
-    return ""
-
-
-def _get_sink_input_id(stream_id: str) -> str:
-    """Get pactl sink-input ID from pw stream ID using wpctl."""
-    lines = _run(["wpctl", "inspect", stream_id])
-    for line in lines:
-        if "object.serial" in line:
-            return line.split("=")[1].strip().strip('"')
-    return ""
-
-
-def _get_wpctl_to_pwpdump_sink_map() -> dict[str, str]:
-    """Map wpctl sink IDs to pw-dump sink IDs using node names."""
-    pwdump_to_wpctl = _get_pwpdump_to_wpctl_sink_map()
-    return {v: k for k, v in pwdump_to_wpctl.items()}
-
-
 def move_to_sink(input_id: str, sink_id: str) -> None:
     """Move stream to sink using pw-metadata with node name."""
     sink_node_names = _get_sink_node_names()
     sink_node_name = sink_node_names.get(sink_id)
     if sink_node_name:
         _call(["pw-metadata", input_id, "target.object", sink_node_name])
-        _invalidate_cache()
         _invalidate_cache()
 
 
