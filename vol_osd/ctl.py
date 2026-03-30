@@ -98,12 +98,15 @@ def cmd_sink_mute() -> None:
 def cmd_start() -> None:
     import os
     import time
+    from ctypes.util import find_library
 
     if os.path.exists(SOCKET_PATH):
         print("vol-osd already running")
         return
     env = os.environ.copy()
-    env["LD_PRELOAD"] = "/usr/lib/x86_64-linux-gnu/libgtk4-layer-shell.so.0"
+    lib_path = find_library("gtk4-layer-shell")
+    if lib_path:
+        env["LD_PRELOAD"] = lib_path
     proc = subprocess.Popen(
         ["vol-osd"],
         stdout=subprocess.PIPE,
