@@ -20,6 +20,9 @@ vol-ctl = "vol_osd.ctl:main"
 [tool.ruff.lint]
 ignore = ["E402"]
 
+[tool.ruff.lint.flake8-type-checking]
+strict = true
+
 [[tool.ty.overrides]]
 include = ["vol_osd/*.py"]
 

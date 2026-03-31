@@ -40,7 +40,9 @@ def _get_mpris_players() -> dict[str, str]:
     try:
         bus = dbus.SessionBus()
         names = [
-            str(n) for n in bus.list_names() if n.startswith("org.mpris.MediaPlayer2.")
+            str(n)
+            for n in (bus.list_names() or [])
+            if n.startswith("org.mpris.MediaPlayer2.")
         ]
         result = {}
         for name in names:
@@ -54,31 +56,6 @@ def _get_mpris_players() -> dict[str, str]:
         return result
     except Exception:
         return {}
-
-
-def _get_mpris_volume(app_name: str) -> float:
-    """Get current MPRIS2 volume for an app."""
-    try:
-        import dbus
-    except ImportError:
-        return -1.0
-
-    players = _get_mpris_players()
-    mpris_name = None
-    for name, path in players.items():
-        if name.lower() == app_name.lower():
-            mpris_name = path
-            break
-    if not mpris_name:
-        return -1.0
-
-    try:
-        bus = dbus.SessionBus()
-        obj = bus.get_object(mpris_name, "/org/mpris/MediaPlayer2")
-        props = dbus.Interface(obj, "org.freedesktop.DBus.Properties")
-        return float(props.Get("org.mpris.MediaPlayer2.Player", "Volume"))
-    except Exception:
-        return -1.0
 
 
 def _set_dbus_volume(app_name: str, delta: float, current_pw: float = -1.0) -> bool:
@@ -186,7 +163,7 @@ def _get_stream_targets(data: list[dict]) -> dict[str, str]:
 _PWDUMP_CACHE: list[dict] | None = None
 
 
-def _get_pw_dump() -> list[dict]:
+def _get_pw_dump() -> list[dict] | None:
     """Get pw-dump data, cached for efficiency."""
     global _PWDUMP_CACHE
     if _PWDUMP_CACHE is None:
@@ -215,7 +192,7 @@ def get_sink_names() -> dict[str, str]:
 
 def get_sinks() -> list[dict]:
     """Return [{id, name, vol, muted}] for all sinks from pw-dump."""
-    data = _get_pw_dump()
+    data = _get_pw_dump() or []
 
     sinks = []
     for obj in data:
@@ -243,7 +220,7 @@ def get_sinks() -> list[dict]:
 
 def _get_sink_node_names() -> dict[str, str]:
     """Return {pwdump_id: node_name} from pw-dump for pw-metadata."""
-    data = _get_pw_dump()
+    data = _get_pw_dump() or []
     sink_node_names = {}
     for obj in data:
         props = obj.get("info", {}).get("props", {})
@@ -261,7 +238,7 @@ def get_sink_ids() -> list[str]:
 
 def get_streams() -> list[dict]:
     """Return [{id, name, vol, muted, sink_id, sink_name}] using pw-dump only."""
-    data = _get_pw_dump()
+    data = _get_pw_dump() or []
     sink_names, sink_node_names, driver_to_pwdump = _get_sink_data(data)
     stream_targets = _get_stream_targets(data)
 
@@ -325,7 +302,7 @@ def get_stream_name(stream_id: str) -> str | None:
 
 def get_input_sink(input_id: str) -> str:
     """Return sink pwdump_id currently used by a stream from pw-dump."""
-    data = _get_pw_dump()
+    data = _get_pw_dump() or []
     _, sink_node_names, driver_to_pwdump = _get_sink_data(data)
     stream_targets = _get_stream_targets(data)
 
