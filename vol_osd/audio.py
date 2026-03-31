@@ -56,8 +56,35 @@ def _get_mpris_players() -> dict[str, str]:
         return {}
 
 
-def _set_dbus_volume(app_name: str, delta: float) -> bool:
-    """Set volume for app via MPRIS2. delta is relative (+0.05 or -0.05)."""
+def _get_mpris_volume(app_name: str) -> float:
+    """Get current MPRIS2 volume for an app."""
+    try:
+        import dbus
+    except ImportError:
+        return -1.0
+
+    players = _get_mpris_players()
+    mpris_name = None
+    for name, path in players.items():
+        if name.lower() == app_name.lower():
+            mpris_name = path
+            break
+    if not mpris_name:
+        return -1.0
+
+    try:
+        bus = dbus.SessionBus()
+        obj = bus.get_object(mpris_name, "/org/mpris/MediaPlayer2")
+        props = dbus.Interface(obj, "org.freedesktop.DBus.Properties")
+        return float(props.Get("org.mpris.MediaPlayer2.Player", "Volume"))
+    except Exception:
+        return -1.0
+
+
+def _set_dbus_volume(app_name: str, delta: float, current_pw: float = -1.0) -> bool:
+    """Set volume for app via MPRIS2. delta is relative (+0.05 or -0.05).
+    If current_pw >= 0, use it as the base (to handle out-of-sync MPRIS).
+    """
     try:
         import dbus
     except ImportError:
@@ -76,12 +103,33 @@ def _set_dbus_volume(app_name: str, delta: float) -> bool:
         bus = dbus.SessionBus()
         obj = bus.get_object(mpris_name, "/org/mpris/MediaPlayer2")
         props = dbus.Interface(obj, "org.freedesktop.DBus.Properties")
-        current = props.Get("org.mpris.MediaPlayer2.Player", "Volume")
-        new_vol = max(0.0, min(1.0, float(current) + delta))
+        if current_pw >= 0:
+            current = current_pw
+        else:
+            current = float(props.Get("org.mpris.MediaPlayer2.Player", "Volume"))
+        new_vol = max(0.0, min(1.0, current + delta))
         props.Set("org.mpris.MediaPlayer2.Player", "Volume", dbus.Double(new_vol))
         return True
     except Exception:
         return False
+
+
+def _get_pipewire_volume(fid: str) -> float:
+    """Get volume for stream from wpctl."""
+    try:
+        output = (
+            subprocess.check_output(
+                ["wpctl", "get-volume", fid], stderr=subprocess.DEVNULL
+            )
+            .decode()
+            .strip()
+        )
+        parts = output.split()
+        if len(parts) >= 2:
+            return float(parts[1])
+    except Exception:
+        pass
+    return -1.0
 
 
 # sinks (output devices)
@@ -351,15 +399,25 @@ def cycle(items: list[str], current: str, direction: str) -> str:
 
 def volume_raise(fid: str) -> None:
     name = get_stream_name(fid)
-    if name and _set_dbus_volume(name, 0.05):
-        return
+    if name:
+        before = _get_pipewire_volume(fid)
+        if before >= 0:
+            if _set_dbus_volume(name, 0.05, before):
+                after = _get_pipewire_volume(fid)
+                if after > before:
+                    return
     _call(["wpctl", "set-volume", fid, f"{STEP}+", "-l", "1.0"])
 
 
 def volume_lower(fid: str) -> None:
     name = get_stream_name(fid)
-    if name and _set_dbus_volume(name, -0.05):
-        return
+    if name:
+        before = _get_pipewire_volume(fid)
+        if before >= 0:
+            if _set_dbus_volume(name, -0.05, before):
+                after = _get_pipewire_volume(fid)
+                if after < before:
+                    return
     _call(["wpctl", "set-volume", fid, f"{STEP}-", "-l", "1.0"])
 
 
