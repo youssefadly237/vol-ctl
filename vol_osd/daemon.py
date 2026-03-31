@@ -42,8 +42,14 @@ HIDE_DELAY = 1800  # ms
 
 CSS = """
 * {
-  font-family: "JetBrains Mono Nerd Font", monospace;
-  font-size: 15px;
+  font-family: "JetBrains Mono", "FiraCode Nerd Font", "Symbols Nerd Font Mono", monospace;
+  font-size: 14px;
+  font-weight: normal;
+}
+
+label {
+  margin-top: 3px;
+  margin-bottom: 3px;
 }
 window { background: transparent; }
 
