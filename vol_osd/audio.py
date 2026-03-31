@@ -267,6 +267,7 @@ def validate_focus() -> str:
 
 # cycle helper
 
+
 def cycle(items: list[str], current: str, direction: str) -> str:
     """Return next/prev item in list, wrapping around."""
     if not items:
@@ -400,6 +401,7 @@ def default_prev() -> None:
 
 
 # socket IPC
+
 
 def send(msg: str) -> None:
     import socket as _socket
