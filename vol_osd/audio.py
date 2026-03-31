@@ -230,7 +230,6 @@ def get_streams() -> list[dict]:
     except Exception:
         return []
 
-    # Build sink lookup maps
     sink_names = {}
     sink_node_names = {}
     driver_to_pwdump = {}
@@ -246,8 +245,14 @@ def get_streams() -> list[dict]:
             if driver_id:
                 driver_to_pwdump[str(driver_id)] = pwdump_id
             else:
-                # Sinks without driver-id map to themselves
                 driver_to_pwdump[pwdump_id] = pwdump_id
+
+    stream_targets = {}
+    for obj in data:
+        if obj.get("type") == "PipeWire:Interface:Metadata":
+            for m in obj.get("metadata", []):
+                if m.get("key") == "target.object":
+                    stream_targets[str(m.get("subject"))] = m.get("value")
 
     streams = []
     for obj in data:
@@ -265,8 +270,9 @@ def get_streams() -> list[dict]:
         vol = vol_cubic ** (1 / 3)
         muted = pw_props.get("mute", False)
 
-        # Resolve sink_id
-        sink_id = props.get("target.object")
+        stream_id_str = str(node_id)
+        sink_id = stream_targets.get(stream_id_str)
+
         if not sink_id:
             driver_id = props.get("node.driver-id")
             if driver_id:
@@ -275,7 +281,7 @@ def get_streams() -> list[dict]:
         if sink_id:
             sink_id = str(sink_id)
             if sink_id.isdigit():
-                pass  # already a pwdump id
+                pass
             else:
                 sink_id = sink_node_names.get(sink_id, "")
         else:
@@ -311,7 +317,6 @@ def get_input_sink(input_id: str) -> str:
     """Return sink pwdump_id currently used by a stream from pw-dump."""
     data = _get_pw_dump()
 
-    # Build driver-id -> pwdump sink ID mapping
     driver_to_pwdump = {}
     for obj in data:
         props = obj.get("info", {}).get("props", {})
@@ -321,7 +326,6 @@ def get_input_sink(input_id: str) -> str:
             if driver_id:
                 driver_to_pwdump[str(driver_id)] = pwdump_id
             else:
-                # Sinks without driver-id map to themselves
                 driver_to_pwdump[pwdump_id] = pwdump_id
 
     sink_node_names = {}
@@ -330,19 +334,28 @@ def get_input_sink(input_id: str) -> str:
         if props.get("media.class") == "Audio/Sink":
             sink_node_names[props.get("node.name")] = str(obj.get("id"))
 
+    stream_target = None
+    for obj in data:
+        if obj.get("type") == "PipeWire:Interface:Metadata":
+            for m in obj.get("metadata", []):
+                if (
+                    str(m.get("subject")) == input_id
+                    and m.get("key") == "target.object"
+                ):
+                    stream_target = m.get("value")
+                    break
+
+    if stream_target:
+        target_str = str(stream_target)
+        if target_str.isdigit():
+            return target_str
+        return sink_node_names.get(target_str, "")
+
     for obj in data:
         props = obj.get("info", {}).get("props", {})
         if str(obj.get("id")) == input_id:
             if props.get("media.class") != "Stream/Output/Audio":
                 return ""
-
-            target = props.get("target.object")
-            if target:
-                target_str = str(target)
-                if target_str.isdigit():
-                    return target_str
-                return sink_node_names.get(target_str, "")
-
             driver_id = props.get("node.driver-id")
             if driver_id:
                 return driver_to_pwdump.get(str(driver_id), str(driver_id))
