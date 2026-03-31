@@ -31,6 +31,7 @@ from gi.repository import Gtk4LayerShell as LayerShell
 
 from vol_osd.audio import (
     SOCKET_PATH,
+    _invalidate_cache,
     get_default_sink,
     get_focus,
     get_streams,
@@ -301,6 +302,7 @@ class VolOsdApp(Gtk.Application):
         if not self.osd:
             return False
         if msg.startswith("show"):
+            _invalidate_cache()
             parts = msg.split()
             mode = (
                 parts[1] if len(parts) > 1 and parts[1] in ("apps", "sinks") else "apps"
