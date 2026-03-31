@@ -135,6 +135,54 @@ def _get_pipewire_volume(fid: str) -> float:
 # sinks (output devices)
 
 
+def _calculate_volume(ch_vols: list[float]) -> float:
+    """Calculate volume from channel volumes (cubic root of average)."""
+    if not ch_vols:
+        return 1.0
+    vol_cubic = sum(ch_vols) / len(ch_vols)
+    return vol_cubic ** (1 / 3)
+
+
+def _get_sink_name(props: dict) -> str:
+    """Extract sink name from node properties."""
+    return props.get("node.description") or props.get("node.name", "")
+
+
+def _get_sink_data(
+    data: list[dict],
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """Build sink lookup maps from pw-dump data.
+
+    Returns (sink_names, sink_node_names, driver_to_pwdump).
+    """
+    sink_names = {}
+    sink_node_names = {}
+    driver_to_pwdump = {}
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        if props.get("media.class") == "Audio/Sink":
+            pwdump_id = str(obj.get("id"))
+            sink_names[pwdump_id] = _get_sink_name(props)
+            sink_node_names[props.get("node.name")] = pwdump_id
+            driver_id = props.get("node.driver-id")
+            if driver_id:
+                driver_to_pwdump[str(driver_id)] = pwdump_id
+            else:
+                driver_to_pwdump[pwdump_id] = pwdump_id
+    return sink_names, sink_node_names, driver_to_pwdump
+
+
+def _get_stream_targets(data: list[dict]) -> dict[str, str]:
+    """Extract stream target mappings from metadata."""
+    stream_targets = {}
+    for obj in data:
+        if obj.get("type") == "PipeWire:Interface:Metadata":
+            for m in obj.get("metadata", []):
+                if m.get("key") == "target.object":
+                    stream_targets[str(m.get("subject"))] = m.get("value")
+    return stream_targets
+
+
 _PWDUMP_CACHE: list[dict] | None = None
 
 
@@ -167,26 +215,18 @@ def get_sink_names() -> dict[str, str]:
 
 def get_sinks() -> list[dict]:
     """Return [{id, name, vol, muted}] for all sinks from pw-dump."""
-    import json
-
-    try:
-        data = json.loads(
-            subprocess.check_output(["pw-dump"], stderr=subprocess.DEVNULL)
-        )
-    except Exception:
-        return []
+    data = _get_pw_dump()
 
     sinks = []
     for obj in data:
         props = obj.get("info", {}).get("props", {})
         if props.get("media.class") == "Audio/Sink":
             node_id = obj.get("id")
-            name = props.get("node.description") or props.get("node.name", "")
+            name = _get_sink_name(props)
 
             pw_props = (obj.get("info", {}).get("params", {}).get("Props") or [{}])[0]
             ch_vols = pw_props.get("channelVolumes", [1.0])
-            vol_cubic = sum(ch_vols) / len(ch_vols) if ch_vols else 1.0
-            vol = vol_cubic ** (1 / 3)
+            vol = _calculate_volume(ch_vols)
             muted = pw_props.get("mute", False)
 
             sinks.append(
@@ -221,38 +261,9 @@ def get_sink_ids() -> list[str]:
 
 def get_streams() -> list[dict]:
     """Return [{id, name, vol, muted, sink_id, sink_name}] using pw-dump only."""
-    import json
-
-    try:
-        data = json.loads(
-            subprocess.check_output(["pw-dump"], stderr=subprocess.DEVNULL)
-        )
-    except Exception:
-        return []
-
-    sink_names = {}
-    sink_node_names = {}
-    driver_to_pwdump = {}
-    for obj in data:
-        props = obj.get("info", {}).get("props", {})
-        if props.get("media.class") == "Audio/Sink":
-            pwdump_id = str(obj.get("id"))
-            sink_names[pwdump_id] = props.get("node.description") or props.get(
-                "node.name", ""
-            )
-            sink_node_names[props.get("node.name")] = pwdump_id
-            driver_id = props.get("node.driver-id")
-            if driver_id:
-                driver_to_pwdump[str(driver_id)] = pwdump_id
-            else:
-                driver_to_pwdump[pwdump_id] = pwdump_id
-
-    stream_targets = {}
-    for obj in data:
-        if obj.get("type") == "PipeWire:Interface:Metadata":
-            for m in obj.get("metadata", []):
-                if m.get("key") == "target.object":
-                    stream_targets[str(m.get("subject"))] = m.get("value")
+    data = _get_pw_dump()
+    sink_names, sink_node_names, driver_to_pwdump = _get_sink_data(data)
+    stream_targets = _get_stream_targets(data)
 
     streams = []
     for obj in data:
@@ -266,8 +277,7 @@ def get_streams() -> list[dict]:
 
         pw_props = (info.get("params", {}).get("Props") or [{}])[0]
         ch_vols = pw_props.get("channelVolumes", [1.0])
-        vol_cubic = sum(ch_vols) / len(ch_vols) if ch_vols else 1.0
-        vol = vol_cubic ** (1 / 3)
+        vol = _calculate_volume(ch_vols)
         muted = pw_props.get("mute", False)
 
         stream_id_str = str(node_id)
@@ -316,35 +326,10 @@ def get_stream_name(stream_id: str) -> str | None:
 def get_input_sink(input_id: str) -> str:
     """Return sink pwdump_id currently used by a stream from pw-dump."""
     data = _get_pw_dump()
+    _, sink_node_names, driver_to_pwdump = _get_sink_data(data)
+    stream_targets = _get_stream_targets(data)
 
-    driver_to_pwdump = {}
-    for obj in data:
-        props = obj.get("info", {}).get("props", {})
-        if props.get("media.class") == "Audio/Sink":
-            pwdump_id = str(obj.get("id"))
-            driver_id = props.get("node.driver-id")
-            if driver_id:
-                driver_to_pwdump[str(driver_id)] = pwdump_id
-            else:
-                driver_to_pwdump[pwdump_id] = pwdump_id
-
-    sink_node_names = {}
-    for obj in data:
-        props = obj.get("info", {}).get("props", {})
-        if props.get("media.class") == "Audio/Sink":
-            sink_node_names[props.get("node.name")] = str(obj.get("id"))
-
-    stream_target = None
-    for obj in data:
-        if obj.get("type") == "PipeWire:Interface:Metadata":
-            for m in obj.get("metadata", []):
-                if (
-                    str(m.get("subject")) == input_id
-                    and m.get("key") == "target.object"
-                ):
-                    stream_target = m.get("value")
-                    break
-
+    stream_target = stream_targets.get(input_id)
     if stream_target:
         target_str = str(stream_target)
         if target_str.isdigit():
@@ -501,19 +486,24 @@ def set_default_sink(sink_id: str) -> None:
         _invalidate_cache()
 
 
+def _get_current_sink_id() -> str | None:
+    """Get current default sink pwdump_id from pactl name."""
+    current_name = _get_default_sink_name()
+    if not current_name:
+        return None
+    sink_node_names = _get_sink_node_names()
+    for pw_id, node_name in sink_node_names.items():
+        if node_name == current_name:
+            return pw_id
+    return None
+
+
 def default_next() -> None:
     """Cycle default sink to next."""
     sinks = get_sink_ids()
     if not sinks:
         return
-    current_name = _get_default_sink_name()
-    current_pw_id = None
-    sink_node_names = _get_sink_node_names()
-    for pw_id, node_name in sink_node_names.items():
-        if node_name == current_name:
-            current_pw_id = pw_id
-            break
-
+    current_pw_id = _get_current_sink_id()
     if not current_pw_id:
         current_pw_id = sinks[0]
 
@@ -526,14 +516,7 @@ def default_prev() -> None:
     sinks = get_sink_ids()
     if not sinks:
         return
-    current_name = _get_default_sink_name()
-    current_pw_id = None
-    sink_node_names = _get_sink_node_names()
-    for pw_id, node_name in sink_node_names.items():
-        if node_name == current_name:
-            current_pw_id = pw_id
-            break
-
+    current_pw_id = _get_current_sink_id()
     if not current_pw_id:
         current_pw_id = sinks[0]
 
