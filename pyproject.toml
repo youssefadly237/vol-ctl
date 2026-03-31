@@ -1,10 +1,10 @@
 [project]
 name = "vol-ctl"
-version = "0.1.0"
+version = "0.1.1"
 description = "Per-app volume OSD for Wayland/niri with PipeWire"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = ["PyGObject"]
+dependencies = ["PyGObject", "dbus-python"]
 
 [build-system]
 requires = ["hatchling"]
@@ -24,4 +24,4 @@ ignore = ["E402"]
 include = ["vol_osd/*.py"]
 
 [tool.ty.overrides.analysis]
-allowed-unresolved-imports = ["gi.repository.*"]
+allowed-unresolved-imports = ["gi.repository.*", "dbus"]

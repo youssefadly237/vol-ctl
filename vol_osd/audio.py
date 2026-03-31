@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from functools import lru_cache
 
 FOCUS_FILE = os.path.expanduser("~/.cache/vol-focus")
 SOCKET_PATH = os.path.expanduser("~/.cache/vol-osd.sock")
@@ -26,6 +27,61 @@ def _run(args: list[str]) -> list[str]:
 
 def _call(args: list[str]) -> None:
     subprocess.call(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+# dbus MPRIS2 helpers
+
+
+@lru_cache(maxsize=1)
+def _get_mpris_players() -> dict[str, str]:
+    """Return {app_name: dbus_path} for all MPRIS2 players."""
+    import dbus
+
+    try:
+        bus = dbus.SessionBus()
+        names = [
+            str(n) for n in bus.list_names() if n.startswith("org.mpris.MediaPlayer2.")
+        ]
+        result = {}
+        for name in names:
+            try:
+                obj = bus.get_object(name, "/org/mpris/MediaPlayer2")
+                props = dbus.Interface(obj, "org.freedesktop.DBus.Properties")
+                name_prop = props.Get("org.mpris.MediaPlayer2", "Identity")
+                result[str(name_prop)] = name
+            except Exception:
+                continue
+        return result
+    except Exception:
+        return {}
+
+
+def _set_dbus_volume(app_name: str, delta: float) -> bool:
+    """Set volume for app via MPRIS2. delta is relative (+0.05 or -0.05)."""
+    try:
+        import dbus
+    except ImportError:
+        return False
+
+    players = _get_mpris_players()
+    mpris_name = None
+    for name, path in players.items():
+        if name.lower() == app_name.lower():
+            mpris_name = path
+            break
+    if not mpris_name:
+        return False
+
+    try:
+        bus = dbus.SessionBus()
+        obj = bus.get_object(mpris_name, "/org/mpris/MediaPlayer2")
+        props = dbus.Interface(obj, "org.freedesktop.DBus.Properties")
+        current = props.Get("org.mpris.MediaPlayer2.Player", "Volume")
+        new_vol = max(0.0, min(1.0, float(current) + delta))
+        props.Set("org.mpris.MediaPlayer2.Player", "Volume", dbus.Double(new_vol))
+        return True
+    except Exception:
+        return False
 
 
 # sinks (output devices)
@@ -195,6 +251,14 @@ def get_stream_ids() -> list[str]:
     return [str(s["id"]) for s in get_streams()]
 
 
+def get_stream_name(stream_id: str) -> str | None:
+    """Return stream app name for given stream ID."""
+    for s in get_streams():
+        if str(s["id"]) == stream_id:
+            return s.get("name")
+    return None
+
+
 def get_input_sink(input_id: str) -> str:
     """Return sink pwdump_id currently used by a stream from pw-dump."""
     data = _get_pw_dump()
@@ -286,10 +350,16 @@ def cycle(items: list[str], current: str, direction: str) -> str:
 
 
 def volume_raise(fid: str) -> None:
+    name = get_stream_name(fid)
+    if name and _set_dbus_volume(name, 0.05):
+        return
     _call(["wpctl", "set-volume", fid, f"{STEP}+", "-l", "1.0"])
 
 
 def volume_lower(fid: str) -> None:
+    name = get_stream_name(fid)
+    if name and _set_dbus_volume(name, -0.05):
+        return
     _call(["wpctl", "set-volume", fid, f"{STEP}-", "-l", "1.0"])
 
 
