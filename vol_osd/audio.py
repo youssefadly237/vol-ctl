@@ -84,7 +84,7 @@ def _set_dbus_volume(app_name: str, delta: float, current_pw: float = -1.0) -> b
             current = current_pw
         else:
             current = float(props.Get("org.mpris.MediaPlayer2.Player", "Volume"))
-        new_vol = max(0.0, min(1.0, current + delta))
+        new_vol = max(0.0, min(1.0, round(current + delta, 2)))
         props.Set("org.mpris.MediaPlayer2.Player", "Volume", dbus.Double(new_vol))
         return True
     except Exception:
@@ -117,7 +117,7 @@ def _calculate_volume(ch_vols: list[float]) -> float:
     if not ch_vols:
         return 1.0
     vol_cubic = sum(ch_vols) / len(ch_vols)
-    return vol_cubic ** (1 / 3)
+    return round(vol_cubic ** (1 / 3), 2)
 
 
 def _get_sink_name(props: dict) -> str:
