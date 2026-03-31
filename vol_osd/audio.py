@@ -10,7 +10,7 @@ SOCKET_PATH = os.path.expanduser("~/.cache/vol-osd.sock")
 STEP = "5%"
 
 
-# ── low-level ────────────────────────────────────────────────────────────────
+# low-level
 
 
 def _run(args: list[str]) -> list[str]:
@@ -28,7 +28,7 @@ def _call(args: list[str]) -> None:
     subprocess.call(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-# ── sinks (output devices) ───────────────────────────────────────────────────
+# sinks (output devices)
 
 
 _PWDUMP_CACHE: list[dict] | None = None
@@ -112,7 +112,7 @@ def get_sink_ids() -> list[str]:
     return list(get_sink_names().keys())
 
 
-# ── sink-inputs (per-app streams) ────────────────────────────────────────────
+# sink-inputs (per-app streams)
 
 
 def get_streams() -> list[dict]:
@@ -238,7 +238,7 @@ def get_input_sink(input_id: str) -> str:
     return ""
 
 
-# ── focus state ──────────────────────────────────────────────────────────────
+# focus state
 
 
 def get_focus() -> str:
@@ -265,8 +265,7 @@ def validate_focus() -> str:
     return focus
 
 
-# ── cycle helper ─────────────────────────────────────────────────────────────
-
+# cycle helper
 
 def cycle(items: list[str], current: str, direction: str) -> str:
     """Return next/prev item in list, wrapping around."""
@@ -282,7 +281,7 @@ def cycle(items: list[str], current: str, direction: str) -> str:
         return items[(idx - 1) % len(items)]
 
 
-# ── wpctl / pactl actions ────────────────────────────────────────────────────
+# wpctl / pactl actions
 
 
 def volume_raise(fid: str) -> None:
@@ -306,7 +305,7 @@ def move_to_sink(input_id: str, sink_id: str) -> None:
         _invalidate_cache()
 
 
-# ── sink (output device) volume ───────────────────────────────────────────────
+# sink (output device) volume
 
 
 def get_default_sink() -> str:
@@ -400,8 +399,7 @@ def default_prev() -> None:
     set_default_sink(sinks[prev_idx])
 
 
-# ── socket IPC ───────────────────────────────────────────────────────────────
-
+# socket IPC
 
 def send(msg: str) -> None:
     import socket as _socket
