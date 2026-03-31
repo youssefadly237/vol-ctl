@@ -1,4 +1,4 @@
-"""vol-ctl — per-app volume controller (entry point)."""
+"""vol-ctl - per-app volume controller (entry point)."""
 
 from __future__ import annotations
 import os

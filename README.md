@@ -50,21 +50,21 @@ Copy `vol-ctl-wrapper.sh` to `~/.scripts/`, then use `spawn-sh`:
 
 ```kdl
 binds {
-    // knob — adjust focused app
+    // knob - adjust focused app
     XF86AudioRaiseVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh raise"; }
     XF86AudioLowerVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh lower"; }
     XF86AudioMute        { spawn-sh "~/.scripts/vol-ctl-wrapper.sh mute"; }
 
-    // Mod+knob — adjust default sink (master volume)
+    // Mod+knob - adjust default sink (master volume)
     Mod+XF86AudioRaiseVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-raise"; }
     Mod+XF86AudioLowerVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-lower"; }
     Mod+XF86AudioMute        { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-mute"; }
 
-    // Mod+Shift+knob — cycle between apps
+    // Mod+Shift+knob - cycle between apps
     Mod+Shift+XF86AudioRaiseVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh cycle-next"; }
     Mod+Shift+XF86AudioLowerVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh cycle-prev"; }
 
-    // Ctrl+Mod+knob — move focused app to next/prev output device
+    // Ctrl+Mod+knob - move focused app to next/prev output device
     Ctrl+Mod+XF86AudioRaiseVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-next"; }
     Ctrl+Mod+XF86AudioLowerVolume { spawn-sh "~/.scripts/vol-ctl-wrapper.sh sink-prev"; }
 }

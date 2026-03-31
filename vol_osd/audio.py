@@ -1,4 +1,4 @@
-"""Shared audio helpers — pactl/wpctl wrappers."""
+"""Shared audio helpers - pactl/wpctl wrappers."""
 
 from __future__ import annotations
 import os

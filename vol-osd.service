@@ -1,5 +1,5 @@
 [Unit]
-Description=vol-osd — per-app volume OSD daemon
+Description=vol-osd - per-app volume OSD daemon
 After=graphical-session.target
 PartOf=graphical-session.target
 

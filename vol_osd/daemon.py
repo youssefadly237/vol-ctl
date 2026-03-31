@@ -1,4 +1,4 @@
-"""vol-osd — GTK4 layer-shell per-app volume OSD daemon."""
+"""vol-osd - GTK4 layer-shell per-app volume OSD daemon."""
 
 from __future__ import annotations
 
