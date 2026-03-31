@@ -31,6 +31,10 @@ def _show() -> None:
     send("show")
 
 
+def _show_mode(mode="apps") -> None:
+    send(f"show {mode}")
+
+
 def cmd_raise() -> None:
     fid = validate_focus()
     if fid:
@@ -82,17 +86,17 @@ def cmd_sink(direction: str) -> None:
 
 def cmd_sink_raise() -> None:
     sink_raise()
-    _show()
+    _show_mode("sinks")
 
 
 def cmd_sink_lower() -> None:
     sink_lower()
-    _show()
+    _show_mode("sinks")
 
 
 def cmd_sink_mute() -> None:
     sink_mute()
-    _show()
+    _show_mode("sinks")
 
 
 def cmd_start() -> None:
@@ -164,6 +168,11 @@ def main() -> None:
         return
 
     cmd = sys.argv[1]
+    mode = (
+        sys.argv[2]
+        if len(sys.argv) > 2 and cmd == "show" and sys.argv[2] in ("apps", "sinks")
+        else None
+    )
     match cmd:
         case "raise":
             cmd_raise()
@@ -187,12 +196,15 @@ def main() -> None:
             cmd_sink_mute()
         case "default-next":
             default_next()
-            _show()
+            _show_mode("sinks")
         case "default-prev":
             default_prev()
-            _show()
+            _show_mode("sinks")
         case "show":
-            _show()
+            if mode:
+                _show_mode(mode)
+            else:
+                _show()
         case "start":
             cmd_start()
         case "kill":

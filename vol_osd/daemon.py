@@ -131,124 +131,127 @@ class OsdWindow:
             self.outer.remove(child)
             child = nxt
 
-    def show(self, streams: list[dict], focus_id: int | None) -> None:
+    def show(
+        self, streams: list[dict], focus_id: int | None, mode: str = "apps"
+    ) -> None:
         self._clear()
 
-        if not streams:
-            lbl = Gtk.Label(label="  no audio streams")
-            lbl.add_css_class("app-name")
-            self.outer.append(lbl)
-        else:
-            for s in streams:
-                focused = s["id"] == focus_id
+        if mode == "apps":
+            if not streams:
+                lbl = Gtk.Label(label="  no audio streams")
+                lbl.add_css_class("app-name")
+                self.outer.append(lbl)
+            else:
+                for s in streams:
+                    focused = s["id"] == focus_id
+                    row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                    row.add_css_class("app-row")
+                    if focused:
+                        row.add_css_class("focused")
+
+                    icon = (
+                        "\U000f0581 "
+                        if s["muted"]
+                        else ("\U000f057e " if focused else "\U000f0580 ")
+                    )
+                    icon_lbl = Gtk.Label(label=icon)
+                    icon_lbl.add_css_class("app-muted" if s["muted"] else "app-name")
+                    if focused:
+                        icon_lbl.add_css_class("focused")
+                    row.append(icon_lbl)
+
+                    name = s["name"]
+                    if len(name) > 20:
+                        name = name[:19] + "\u2026"
+                    name_lbl = Gtk.Label(label=name, xalign=0)
+                    name_lbl.set_hexpand(True)
+                    name_lbl.add_css_class("app-name")
+                    if focused:
+                        name_lbl.add_css_class("focused")
+                    row.append(name_lbl)
+
+                    pct = min(1.0, max(0.0, s["vol"]))
+                    track = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+                    track.add_css_class("bar-track")
+                    track.set_valign(Gtk.Align.CENTER)
+                    fill = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+                    fill.add_css_class("bar-fill")
+                    if focused:
+                        fill.add_css_class("focused")
+                    fill.set_size_request(int(100 * pct), -1)
+                    track.append(fill)
+                    row.append(track)
+
+                    pct_lbl = Gtk.Label(label=f"{int(pct * 100):3d}%")
+                    pct_lbl.add_css_class("vol-label")
+                    if focused:
+                        pct_lbl.add_css_class("focused")
+                    row.append(pct_lbl)
+
+                    self.outer.append(row)
+
+                    if focused:
+                        sink = s.get("sink_name", "")
+                        if len(sink) > 34:
+                            sink = sink[:33] + "\u2026"
+                        sink_lbl = Gtk.Label(label=f"  \u21aa {sink}", xalign=0)
+                        sink_lbl.add_css_class("sink-label")
+                        self.outer.append(sink_lbl)
+
+        elif mode == "sinks":
+            default_sink = get_default_sink()
+            sinks = get_sinks()
+            for sink in sinks:
+                is_default = sink["id"] == default_sink
                 row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-                row.add_css_class("app-row")
-                if focused:
-                    row.add_css_class("focused")
+                row.add_css_class("sink-row")
+                if is_default:
+                    row.add_css_class("default")
 
                 icon = (
                     "\U000f0581 "
-                    if s["muted"]
-                    else ("\U000f057e " if focused else "\U000f0580 ")
+                    if sink["muted"]
+                    else ("\U000f057e " if is_default else "\U000f0580 ")
                 )
                 icon_lbl = Gtk.Label(label=icon)
-                icon_lbl.add_css_class("app-muted" if s["muted"] else "app-name")
-                if focused:
-                    icon_lbl.add_css_class("focused")
+                if sink["muted"]:
+                    icon_lbl.add_css_class("app-muted")
+                elif is_default:
+                    icon_lbl.add_css_class("app-name")
+                    icon_lbl.add_css_class("default")
+                else:
+                    icon_lbl.add_css_class("app-name")
                 row.append(icon_lbl)
 
-                name = s["name"]
+                name = sink["name"]
                 if len(name) > 20:
                     name = name[:19] + "\u2026"
                 name_lbl = Gtk.Label(label=name, xalign=0)
                 name_lbl.set_hexpand(True)
                 name_lbl.add_css_class("app-name")
-                if focused:
-                    name_lbl.add_css_class("focused")
+                if is_default:
+                    name_lbl.add_css_class("default")
                 row.append(name_lbl)
 
-                pct = min(1.0, max(0.0, s["vol"]))
+                pct = min(1.0, max(0.0, sink["vol"]))
                 track = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
                 track.add_css_class("bar-track")
                 track.set_valign(Gtk.Align.CENTER)
                 fill = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
                 fill.add_css_class("bar-fill")
-                if focused:
-                    fill.add_css_class("focused")
+                if is_default:
+                    fill.add_css_class("default")
                 fill.set_size_request(int(100 * pct), -1)
                 track.append(fill)
                 row.append(track)
 
                 pct_lbl = Gtk.Label(label=f"{int(pct * 100):3d}%")
                 pct_lbl.add_css_class("vol-label")
-                if focused:
-                    pct_lbl.add_css_class("focused")
+                if is_default:
+                    pct_lbl.add_css_class("default")
                 row.append(pct_lbl)
 
                 self.outer.append(row)
-
-                if focused:
-                    sink = s.get("sink_name", "")
-                    if len(sink) > 34:
-                        sink = sink[:33] + "\u2026"
-                    sink_lbl = Gtk.Label(label=f"  \u21aa {sink}", xalign=0)
-                    sink_lbl.add_css_class("sink-label")
-                    self.outer.append(sink_lbl)
-
-        # Add sinks section
-        default_sink = get_default_sink()
-        sinks = get_sinks()
-        for sink in sinks:
-            is_default = sink["id"] == default_sink
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            row.add_css_class("sink-row")
-            if is_default:
-                row.add_css_class("default")
-
-            icon = (
-                "\U000f0581 "
-                if sink["muted"]
-                else ("\U000f057e " if is_default else "\U000f0580 ")
-            )
-            icon_lbl = Gtk.Label(label=icon)
-            if sink["muted"]:
-                icon_lbl.add_css_class("app-muted")
-            elif is_default:
-                icon_lbl.add_css_class("app-name")
-                icon_lbl.add_css_class("default")
-            else:
-                icon_lbl.add_css_class("app-name")
-            row.append(icon_lbl)
-
-            name = sink["name"]
-            if len(name) > 20:
-                name = name[:19] + "\u2026"
-            name_lbl = Gtk.Label(label=name, xalign=0)
-            name_lbl.set_hexpand(True)
-            name_lbl.add_css_class("app-name")
-            if is_default:
-                name_lbl.add_css_class("default")
-            row.append(name_lbl)
-
-            pct = min(1.0, max(0.0, sink["vol"]))
-            track = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-            track.add_css_class("bar-track")
-            track.set_valign(Gtk.Align.CENTER)
-            fill = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-            fill.add_css_class("bar-fill")
-            if is_default:
-                fill.add_css_class("default")
-            fill.set_size_request(int(100 * pct), -1)
-            track.append(fill)
-            row.append(track)
-
-            pct_lbl = Gtk.Label(label=f"{int(pct * 100):3d}%")
-            pct_lbl.add_css_class("vol-label")
-            if is_default:
-                pct_lbl.add_css_class("default")
-            row.append(pct_lbl)
-
-            self.outer.append(row)
 
         self.win.set_visible(True)
         self.win.present()
@@ -297,13 +300,17 @@ class VolOsdApp(Gtk.Application):
     def _handle(self, msg: str) -> bool:
         if not self.osd:
             return False
-        if msg == "show":
+        if msg.startswith("show"):
+            parts = msg.split()
+            mode = (
+                parts[1] if len(parts) > 1 and parts[1] in ("apps", "sinks") else "apps"
+            )
             streams = get_streams()
             try:
                 focus_id = int(get_focus())
             except (ValueError, TypeError):
                 focus_id = None
-            self.osd.show(streams, focus_id)
+            self.osd.show(streams, focus_id, mode=mode)
         elif msg == "hide":
             self.osd._hide()
         return False
