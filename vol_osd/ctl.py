@@ -105,8 +105,8 @@ def cmd_start() -> None:
     from ctypes.util import find_library
 
     if os.path.exists(SOCKET_PATH):
-        print("vol-osd already running")
-        return
+        os.unlink(SOCKET_PATH)
+
     env = os.environ.copy()
     lib_path = find_library("gtk4-layer-shell")
     if lib_path:
@@ -118,18 +118,21 @@ def cmd_start() -> None:
         start_new_session=True,
         env=env,
     )
-    time.sleep(0.5)
-    if proc.poll() is not None:
-        _, stderr = proc.communicate()
-        if stderr:
-            print(stderr.decode(), file=sys.stderr)
-        else:
-            print(
-                f"vol-osd failed to start (exit code {proc.returncode})",
-                file=sys.stderr,
-            )
-        sys.exit(1)
-    print("vol-osd started")
+
+    for _ in range(30):
+        if os.path.exists(SOCKET_PATH):
+            print("vol-osd started")
+            return
+        time.sleep(0.1)
+
+    _, stderr = proc.communicate(timeout=1)
+    print(
+        stderr.decode()
+        if stderr
+        else f"vol-osd failed to start (exit {proc.returncode})",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def cmd_kill() -> None:

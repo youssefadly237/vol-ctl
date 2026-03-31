@@ -405,12 +405,29 @@ def default_prev() -> None:
 
 def send(msg: str) -> None:
     import socket as _socket
+    from vol_osd.ctl import cmd_start
 
     try:
         with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as s:
             s.connect(SOCKET_PATH)
             s.sendall(msg.encode())
-    except FileNotFoundError:
-        print("vol-osd not running. Run 'vol-ctl start' first.", file=sys.stderr)
+    except (FileNotFoundError, ConnectionRefusedError):
+        # Socket missing or stale, try to start daemon
+        if os.path.exists(SOCKET_PATH):
+            try:
+                os.unlink(SOCKET_PATH)
+            except Exception:
+                pass
+        print(
+            "vol-osd not running or stale socket, attempting to start...",
+            file=sys.stderr,
+        )
+        cmd_start()
+        try:
+            with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as s:
+                s.connect(SOCKET_PATH)
+                s.sendall(msg.encode())
+        except Exception as e:
+            print(f"vol-osd error after auto-start: {e}", file=sys.stderr)
     except Exception as e:
         print(f"vol-osd error: {e}", file=sys.stderr)
