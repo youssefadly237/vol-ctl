@@ -1,6 +1,7 @@
-"""Shared audio helpers - pactl/wpctl wrappers."""
+"""Shared audio helpers - pw-dump/wpctl wrappers."""
 
 from __future__ import annotations
+from collections.abc import Mapping
 import os
 import subprocess
 import sys
@@ -204,38 +205,57 @@ def get_sinks() -> list[dict]:
     """Return [{id, name, vol, muted}] for all sinks from pw-dump."""
     data = _get_pw_dump() or []
 
-    sinks = []
+    sink_map: dict[str, dict] = {}
+    device_to_internal_id: dict[str, str] = {}
+
     for obj in data:
         props = obj.get("info", {}).get("props", {})
-        if props.get("media.class") == "Audio/Sink":
-            node_id = obj.get("id")
-            name = _get_sink_name(props)
+        media_class = props.get("media.class", "")
+        if media_class not in ("Audio/Sink", "Audio/Sink/Internal"):
+            continue
 
-            pw_props = (obj.get("info", {}).get("params", {}).get("Props") or [{}])[0]
-            ch_vols = pw_props.get("channelVolumes", [1.0])
-            vol = _cubic_to_linear_vol(ch_vols)
-            muted = pw_props.get("mute", False)
+        node_id = str(obj.get("id"))
+        name = _get_sink_name(props)
+        key = name
+        device_id = props.get("device.id", "")
 
-            sinks.append(
-                {
-                    "id": str(node_id),
-                    "name": name,
-                    "vol": vol,
-                    "muted": muted,
-                }
-            )
+        is_internal = media_class == "Audio/Sink/Internal"
+        pw_props = (obj.get("info", {}).get("params", {}).get("Props") or [{}])[0]
+        ch_vols = pw_props.get("channelVolumes", [1.0])
+        vol = _cubic_to_linear_vol(ch_vols)
+        muted = pw_props.get("mute", False)
 
-    return sinks
+        if is_internal and device_id:
+            device_to_internal_id[device_id] = node_id
+
+        if key not in sink_map:
+            sink_map[key] = {
+                "id": node_id,
+                "name": name,
+                "vol": vol,
+                "muted": muted,
+            }
+        elif is_internal:
+            sink_map[key]["vol"] = vol
+            sink_map[key]["muted"] = muted
+
+    return list(sink_map.values())
 
 
 def _get_sink_node_names() -> dict[str, str]:
-    """Return {pwdump_id: node_name} from pw-dump for pw-metadata."""
+    """Return {pwdump_id: node_name} from pw-dump."""
     data = _get_pw_dump() or []
     sink_node_names = {}
+
     for obj in data:
         props = obj.get("info", {}).get("props", {})
-        if props.get("media.class") == "Audio/Sink":
-            sink_node_names[str(obj.get("id"))] = props.get("node.name", "")
+        media_class = props.get("media.class", "")
+        if media_class not in ("Audio/Sink", "Audio/Sink/Internal"):
+            continue
+        node_id = str(obj.get("id"))
+        node_name = props.get("node.name", "")
+        sink_node_names[node_id] = node_name
+
     return sink_node_names
 
 
@@ -379,7 +399,7 @@ def cycle(items: list[str], current: str, direction: str) -> str:
         return items[(idx - 1) % len(items)]
 
 
-# wpctl / pactl actions
+# wpctl actions
 
 
 def volume_raise(fid: str) -> None:
@@ -422,67 +442,96 @@ def move_to_sink(input_id: str, sink_id: str) -> None:
 # sink (output device) volume
 
 
-def get_default_sink() -> str:
-    """Return default sink pwdump_id using pactl + pw-dump."""
-    lines = _run(["pactl", "get-default-sink"])
-    if not lines:
+def _get_metadata_name(value: object) -> str:
+    """Extract a node name from metadata value payload."""
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if key == "name" and isinstance(item, str):
+                return item
         return ""
-    pactl_name = lines[0].strip()
+    if isinstance(value, str):
+        return value
+    return ""
 
-    sink_node_names = _get_sink_node_names()
-    for pwdump_id, node_name in sink_node_names.items():
-        if node_name == pactl_name:
-            return pwdump_id
+
+def get_default_sink() -> str:
+    """Return default sink id using pw-dump metadata."""
+    data = _get_pw_dump() or []
+    default_node_name = ""
+
+    for obj in data:
+        if obj.get("type") != "PipeWire:Interface:Metadata":
+            continue
+        for meta in obj.get("metadata", []):
+            key = meta.get("key")
+            if key not in ("default.audio.sink", "default.configured.audio.sink"):
+                continue
+            default_node_name = _get_metadata_name(meta.get("value"))
+            if default_node_name:
+                break
+        if default_node_name:
+            break
+
+    if not default_node_name:
+        return ""
+
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        media_class = props.get("media.class", "")
+        if media_class not in ("Audio/Sink", "Audio/Sink/Internal"):
+            continue
+        if props.get("node.name") == default_node_name:
+            return str(obj.get("id"))
 
     return ""
 
 
 def sink_raise() -> None:
-    sid = get_default_sink()
-    if sid:
-        _call(["wpctl", "set-volume", sid, f"{STEP}+", "-l", "1.0"])
-        _invalidate_cache()
+    _call(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{STEP}+", "-l", "1.0"])
+    _invalidate_cache()
 
 
 def sink_lower() -> None:
-    sid = get_default_sink()
-    if sid:
-        _call(["wpctl", "set-volume", sid, f"{STEP}-", "-l", "1.0"])
-        _invalidate_cache()
+    _call(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{STEP}-", "-l", "1.0"])
+    _invalidate_cache()
 
 
 def sink_mute() -> None:
-    sid = get_default_sink()
-    if sid:
-        _call(["wpctl", "set-mute", sid, "toggle"])
-        _invalidate_cache()
-
-
-def _get_default_sink_name() -> str:
-    """Get pactl name of default sink."""
-    lines = _run(["pactl", "get-default-sink"])
-    return lines[0].strip() if lines else ""
-
-
-def set_default_sink(sink_id: str) -> None:
-    """Set default sink by pw-dump ID using pactl."""
-    sink_node_names = _get_sink_node_names()
-    pactl_name = sink_node_names.get(sink_id)
-    if pactl_name:
-        _call(["pactl", "set-default-sink", pactl_name])
-        _invalidate_cache()
+    _call(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
+    _invalidate_cache()
 
 
 def _get_current_sink_id() -> str | None:
-    """Get current default sink pwdump_id from pactl name."""
-    current_name = _get_default_sink_name()
-    if not current_name:
-        return None
-    sink_node_names = _get_sink_node_names()
-    for pw_id, node_name in sink_node_names.items():
-        if node_name == current_name:
-            return pw_id
-    return None
+    """Get current default sink id."""
+    return get_default_sink() or None
+
+
+def _find_default_id_for_sink(sink_id: str) -> str:
+    """Find the ID that wpctl set-default accepts for a sink."""
+    data = _get_pw_dump() or []
+    for obj in data:
+        props = obj.get("info", {}).get("props", {})
+        if str(obj.get("id")) == sink_id:
+            media_class = props.get("media.class", "")
+            if media_class == "Audio/Sink/Internal":
+                device_id = props.get("device.id")
+                if device_id:
+                    for other in data:
+                        other_props = other.get("info", {}).get("props", {})
+                        if (
+                            other_props.get("device.id") == device_id
+                            and other_props.get("media.class") == "Audio/Sink"
+                        ):
+                            return str(other.get("id"))
+            return sink_id
+    return sink_id
+
+
+def set_default_sink(sink_id: str) -> None:
+    """Set default sink by pw-dump ID using wpctl."""
+    default_id = _find_default_id_for_sink(sink_id)
+    _call(["wpctl", "set-default", default_id])
+    _invalidate_cache()
 
 
 def default_next() -> None:
