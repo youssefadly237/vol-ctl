@@ -4,11 +4,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from functools import lru_cache
 
-FOCUS_FILE = os.path.expanduser("~/.cache/vol-focus")
-SOCKET_PATH = os.path.expanduser("~/.cache/vol-osd.sock")
-STEP = "5%"
+from vol_osd import SOCKET_PATH, FOCUS_FILE, STEP
 
 
 # low-level
@@ -32,9 +29,11 @@ def _call(args: list[str]) -> None:
 # dbus MPRIS2 helpers
 
 
-@lru_cache(maxsize=1)
 def _get_mpris_players() -> dict[str, str]:
     """Return {app_name: dbus_path} for all MPRIS2 players."""
+    if _MPRISCache._cache is not None:
+        return _MPRISCache._cache
+
     import dbus
 
     try:
@@ -53,7 +52,8 @@ def _get_mpris_players() -> dict[str, str]:
                 result[str(name_prop)] = name
             except Exception:
                 continue
-        return result
+        _MPRISCache._cache = result if result else {}
+        return _MPRISCache._cache
     except Exception:
         return {}
 
@@ -112,10 +112,11 @@ def _get_pipewire_volume(fid: str) -> float:
 # sinks (output devices)
 
 
-def _calculate_volume(ch_vols: list[float]) -> float:
-    """Calculate volume from channel volumes (cubic root of average)."""
+def _cubic_to_linear_vol(ch_vols: list[float]) -> float:
+    """Convert PipeWire cubic channel volumes to a linear scalar (0.0-1.0) by
+    taking the cube root of the per-channel average."""
     if not ch_vols:
-        return 1.0
+        return 0.0
     vol_cubic = sum(ch_vols) / len(ch_vols)
     return round(vol_cubic ** (1 / 3), 2)
 
@@ -160,29 +161,38 @@ def _get_stream_targets(data: list[dict]) -> dict[str, str]:
     return stream_targets
 
 
-_PWDUMP_CACHE: list[dict] | None = None
+class _PWDumpCache:
+    _cache: list[dict] | None = None
 
 
 def _get_pw_dump() -> list[dict] | None:
     """Get pw-dump data, cached for efficiency."""
-    global _PWDUMP_CACHE
-    if _PWDUMP_CACHE is None:
+    if _PWDumpCache._cache is None:
         import json
 
         try:
             output = subprocess.check_output(
                 ["pw-dump"], stderr=subprocess.DEVNULL, timeout=5
             )
-            _PWDUMP_CACHE = json.loads(output)
+            _PWDumpCache._cache = json.loads(output)
         except Exception:
-            _PWDUMP_CACHE = []
-    return _PWDUMP_CACHE
+            _PWDumpCache._cache = []
+    return _PWDumpCache._cache
 
 
 def _invalidate_cache() -> None:
     """Invalidate pw-dump cache."""
-    global _PWDUMP_CACHE
-    _PWDUMP_CACHE = None
+    _PWDumpCache._cache = None
+    _invalidate_mpris_cache()
+
+
+class _MPRISCache:
+    _cache: dict[str, str] | None = None
+
+
+def _invalidate_mpris_cache() -> None:
+    """Invalidate MPRIS players cache."""
+    _MPRISCache._cache = None
 
 
 def get_sink_names() -> dict[str, str]:
@@ -203,7 +213,7 @@ def get_sinks() -> list[dict]:
 
             pw_props = (obj.get("info", {}).get("params", {}).get("Props") or [{}])[0]
             ch_vols = pw_props.get("channelVolumes", [1.0])
-            vol = _calculate_volume(ch_vols)
+            vol = _cubic_to_linear_vol(ch_vols)
             muted = pw_props.get("mute", False)
 
             sinks.append(
@@ -254,7 +264,7 @@ def get_streams() -> list[dict]:
 
         pw_props = (info.get("params", {}).get("Props") or [{}])[0]
         ch_vols = pw_props.get("channelVolumes", [1.0])
-        vol = _calculate_volume(ch_vols)
+        vol = _cubic_to_linear_vol(ch_vols)
         muted = pw_props.get("mute", False)
 
         stream_id_str = str(node_id)
@@ -504,31 +514,31 @@ def default_prev() -> None:
 # socket IPC
 
 
-def send(msg: str) -> None:
+def send(msg: str, auto_start: bool = True) -> None:
     import socket as _socket
-    from vol_osd.ctl import cmd_start
+    from vol_osd.utils import clear_stale_socket, start_daemon_process, wait_for_socket
 
     try:
         with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as s:
             s.connect(SOCKET_PATH)
             s.sendall(msg.encode())
     except (FileNotFoundError, ConnectionRefusedError):
-        # Socket missing or stale, try to start daemon
-        if os.path.exists(SOCKET_PATH):
-            try:
-                os.unlink(SOCKET_PATH)
-            except Exception:
-                pass
+        if not auto_start:
+            return
+        clear_stale_socket()
         print(
             "vol-osd not running or stale socket, attempting to start...",
             file=sys.stderr,
         )
-        cmd_start()
-        try:
-            with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as s:
-                s.connect(SOCKET_PATH)
-                s.sendall(msg.encode())
-        except Exception as e:
-            print(f"vol-osd error after auto-start: {e}", file=sys.stderr)
+        start_daemon_process()
+        if wait_for_socket():
+            try:
+                with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as s:
+                    s.connect(SOCKET_PATH)
+                    s.sendall(msg.encode())
+            except Exception as e:
+                print(f"vol-osd error after auto-start: {e}", file=sys.stderr)
+        else:
+            print("vol-osd started but socket never appeared", file=sys.stderr)
     except Exception as e:
         print(f"vol-osd error: {e}", file=sys.stderr)

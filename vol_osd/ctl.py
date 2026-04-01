@@ -23,16 +23,11 @@ from vol_osd.audio import (
     volume_mute,
     volume_raise,
 )
-
-SOCKET_PATH = os.path.expanduser("~/.cache/vol-osd.sock")
-
-
-def _show() -> None:
-    send("show")
+from vol_osd import SOCKET_PATH
 
 
-def _show_mode(mode="apps") -> None:
-    send(f"show {mode}")
+def _show(mode: str | None = None) -> None:
+    send(f"show {mode}" if mode else "show")
 
 
 def cmd_raise() -> None:
@@ -86,53 +81,26 @@ def cmd_sink(direction: str) -> None:
 
 def cmd_sink_raise() -> None:
     sink_raise()
-    _show_mode("sinks")
+    _show("sinks")
 
 
 def cmd_sink_lower() -> None:
     sink_lower()
-    _show_mode("sinks")
+    _show("sinks")
 
 
 def cmd_sink_mute() -> None:
     sink_mute()
-    _show_mode("sinks")
+    _show("sinks")
 
 
 def cmd_start() -> None:
-    import os
-    import time
-    from ctypes.util import find_library
+    from vol_osd.utils import ensure_daemon_running
 
-    if os.path.exists(SOCKET_PATH):
-        os.unlink(SOCKET_PATH)
-
-    env = os.environ.copy()
-    lib_path = find_library("gtk4-layer-shell")
-    if lib_path:
-        env["LD_PRELOAD"] = lib_path
-    proc = subprocess.Popen(
-        ["vol-osd"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
-        env=env,
-    )
-
-    for _ in range(30):
-        if os.path.exists(SOCKET_PATH):
-            print("vol-osd started")
-            return
-        time.sleep(0.1)
-
-    _, stderr = proc.communicate(timeout=1)
-    print(
-        stderr.decode()
-        if stderr
-        else f"vol-osd failed to start (exit {proc.returncode})",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+    if ensure_daemon_running():
+        print("vol-osd started")
+    else:
+        sys.exit(1)
 
 
 def cmd_kill() -> None:
@@ -199,15 +167,12 @@ def main() -> None:
             cmd_sink_mute()
         case "default-next":
             default_next()
-            _show_mode("sinks")
+            _show("sinks")
         case "default-prev":
             default_prev()
-            _show_mode("sinks")
+            _show("sinks")
         case "show":
-            if mode:
-                _show_mode(mode)
-            else:
-                _show()
+            _show(mode)
         case "start":
             cmd_start()
         case "kill":
