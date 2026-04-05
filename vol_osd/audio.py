@@ -8,19 +8,14 @@ import sys
 
 from vol_osd import SOCKET_PATH, FOCUS_FILE, STEP
 
+_DEFAULT_AUDIO_SINK = "@DEFAULT_AUDIO_SINK@"
+
+_SINK = "Audio/Sink"
+_SINK_INTERNAL = "Audio/Sink/Internal"
+_SINK_CLASSES = (_SINK, _SINK_INTERNAL)
+
 
 # low-level
-
-
-def _run(args: list[str]) -> list[str]:
-    try:
-        return (
-            subprocess.check_output(args, stderr=subprocess.DEVNULL, timeout=2)
-            .decode(errors="replace")
-            .splitlines()
-        )
-    except Exception:
-        return []
 
 
 def _call(args: list[str]) -> None:
@@ -32,8 +27,8 @@ def _call(args: list[str]) -> None:
 
 def _get_mpris_players() -> dict[str, str]:
     """Return {app_name: dbus_path} for all MPRIS2 players."""
-    if _MPRISCache._cache is not None:
-        return _MPRISCache._cache
+    if _Cache.mpris is not None:
+        return _Cache.mpris
 
     import dbus
 
@@ -53,8 +48,8 @@ def _get_mpris_players() -> dict[str, str]:
                 result[str(name_prop)] = name
             except Exception:
                 continue
-        _MPRISCache._cache = result if result else {}
-        return _MPRISCache._cache
+        _Cache.mpris = result if result else {}
+        return _Cache.mpris
     except Exception:
         return {}
 
@@ -139,7 +134,7 @@ def _get_sink_data(
     driver_to_pwdump = {}
     for obj in data:
         props = obj.get("info", {}).get("props", {})
-        if props.get("media.class") == "Audio/Sink":
+        if props.get("media.class") == _SINK:
             pwdump_id = str(obj.get("id"))
             sink_names[pwdump_id] = _get_sink_name(props)
             sink_node_names[props.get("node.name")] = pwdump_id
@@ -162,38 +157,40 @@ def _get_stream_targets(data: list[dict]) -> dict[str, str]:
     return stream_targets
 
 
-class _PWDumpCache:
-    _cache: list[dict] | None = None
+class _Cache:
+    pw_dump: list[dict] | None = None
+    mpris: dict[str, str] | None = None
 
 
-def _get_pw_dump() -> list[dict] | None:
-    """Get pw-dump data, cached for efficiency."""
-    if _PWDumpCache._cache is None:
+def _get_pw_dump() -> list[dict]:
+    """Get pw-dump data, cached for efficiency. Always returns a list.
+
+    Returns an empty list on error (pw-dump not available or parse failure).
+    """
+    if _Cache.pw_dump is None:
         import json
 
         try:
             output = subprocess.check_output(
                 ["pw-dump"], stderr=subprocess.DEVNULL, timeout=5
             )
-            _PWDumpCache._cache = json.loads(output)
-        except Exception:
-            _PWDumpCache._cache = []
-    return _PWDumpCache._cache
+            _Cache.pw_dump = json.loads(output)
+            if not isinstance(_Cache.pw_dump, list):
+                _Cache.pw_dump = []
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+            json.JSONDecodeError,
+        ):
+            _Cache.pw_dump = []
+    return _Cache.pw_dump
 
 
 def _invalidate_cache() -> None:
-    """Invalidate pw-dump cache."""
-    _PWDumpCache._cache = None
-    _invalidate_mpris_cache()
-
-
-class _MPRISCache:
-    _cache: dict[str, str] | None = None
-
-
-def _invalidate_mpris_cache() -> None:
-    """Invalidate MPRIS players cache."""
-    _MPRISCache._cache = None
+    """Invalidate pw-dump and MPRIS cache."""
+    _Cache.pw_dump = None
+    _Cache.mpris = None
 
 
 def get_sink_names() -> dict[str, str]:
@@ -203,7 +200,7 @@ def get_sink_names() -> dict[str, str]:
 
 def get_sinks() -> list[dict]:
     """Return [{id, name, vol, muted}] for all sinks from pw-dump."""
-    data = _get_pw_dump() or []
+    data = _get_pw_dump()
 
     sink_map: dict[str, dict] = {}
     device_to_internal_id: dict[str, str] = {}
@@ -211,7 +208,7 @@ def get_sinks() -> list[dict]:
     for obj in data:
         props = obj.get("info", {}).get("props", {})
         media_class = props.get("media.class", "")
-        if media_class not in ("Audio/Sink", "Audio/Sink/Internal"):
+        if media_class not in _SINK_CLASSES:
             continue
 
         node_id = str(obj.get("id"))
@@ -219,7 +216,7 @@ def get_sinks() -> list[dict]:
         key = name
         device_id = props.get("device.id", "")
 
-        is_internal = media_class == "Audio/Sink/Internal"
+        is_internal = media_class == _SINK_INTERNAL
         pw_props = (obj.get("info", {}).get("params", {}).get("Props") or [{}])[0]
         ch_vols = pw_props.get("channelVolumes", [1.0])
         vol = _cubic_to_linear_vol(ch_vols)
@@ -242,23 +239,6 @@ def get_sinks() -> list[dict]:
     return list(sink_map.values())
 
 
-def _get_sink_node_names() -> dict[str, str]:
-    """Return {pwdump_id: node_name} from pw-dump."""
-    data = _get_pw_dump() or []
-    sink_node_names = {}
-
-    for obj in data:
-        props = obj.get("info", {}).get("props", {})
-        media_class = props.get("media.class", "")
-        if media_class not in ("Audio/Sink", "Audio/Sink/Internal"):
-            continue
-        node_id = str(obj.get("id"))
-        node_name = props.get("node.name", "")
-        sink_node_names[node_id] = node_name
-
-    return sink_node_names
-
-
 def get_sink_ids() -> list[str]:
     return list(get_sink_names().keys())
 
@@ -268,7 +248,7 @@ def get_sink_ids() -> list[str]:
 
 def get_streams() -> list[dict]:
     """Return [{id, name, vol, muted, sink_id, sink_name}] using pw-dump only."""
-    data = _get_pw_dump() or []
+    data = _get_pw_dump()
     sink_names, sink_node_names, driver_to_pwdump = _get_sink_data(data)
     stream_targets = _get_stream_targets(data)
 
@@ -332,7 +312,7 @@ def get_stream_name(stream_id: str) -> str | None:
 
 def get_input_sink(input_id: str) -> str:
     """Return sink pwdump_id currently used by a stream from pw-dump."""
-    data = _get_pw_dump() or []
+    data = _get_pw_dump()
     _, sink_node_names, driver_to_pwdump = _get_sink_data(data)
     stream_targets = _get_stream_targets(data)
 
@@ -432,8 +412,9 @@ def volume_mute(fid: str) -> None:
 
 def move_to_sink(input_id: str, sink_id: str) -> None:
     """Move stream to sink using pw-metadata with node name."""
-    sink_node_names = _get_sink_node_names()
-    sink_node_name = sink_node_names.get(sink_id)
+    _, sink_node_names, _ = _get_sink_data(_get_pw_dump())
+    node_name_by_pwdump_id = {v: k for k, v in sink_node_names.items()}
+    sink_node_name = node_name_by_pwdump_id.get(sink_id)
     if sink_node_name:
         _call(["pw-metadata", input_id, "target.object", sink_node_name])
         _invalidate_cache()
@@ -456,7 +437,7 @@ def _get_metadata_name(value: object) -> str:
 
 def get_default_sink() -> str:
     """Return default sink id using pw-dump metadata."""
-    data = _get_pw_dump() or []
+    data = _get_pw_dump()
     default_node_name = ""
 
     for obj in data:
@@ -478,7 +459,7 @@ def get_default_sink() -> str:
     for obj in data:
         props = obj.get("info", {}).get("props", {})
         media_class = props.get("media.class", "")
-        if media_class not in ("Audio/Sink", "Audio/Sink/Internal"):
+        if media_class not in _SINK_CLASSES:
             continue
         if props.get("node.name") == default_node_name:
             return str(obj.get("id"))
@@ -487,40 +468,35 @@ def get_default_sink() -> str:
 
 
 def sink_raise() -> None:
-    _call(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{STEP}+", "-l", "1.0"])
+    _call(["wpctl", "set-volume", _DEFAULT_AUDIO_SINK, f"{STEP}+", "-l", "1.0"])
     _invalidate_cache()
 
 
 def sink_lower() -> None:
-    _call(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", f"{STEP}-", "-l", "1.0"])
+    _call(["wpctl", "set-volume", _DEFAULT_AUDIO_SINK, f"{STEP}-", "-l", "1.0"])
     _invalidate_cache()
 
 
 def sink_mute() -> None:
-    _call(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"])
+    _call(["wpctl", "set-mute", _DEFAULT_AUDIO_SINK, "toggle"])
     _invalidate_cache()
-
-
-def _get_current_sink_id() -> str | None:
-    """Get current default sink id."""
-    return get_default_sink() or None
 
 
 def _find_default_id_for_sink(sink_id: str) -> str:
     """Find the ID that wpctl set-default accepts for a sink."""
-    data = _get_pw_dump() or []
+    data = _get_pw_dump()
     for obj in data:
         props = obj.get("info", {}).get("props", {})
         if str(obj.get("id")) == sink_id:
             media_class = props.get("media.class", "")
-            if media_class == "Audio/Sink/Internal":
+            if media_class == _SINK_INTERNAL:
                 device_id = props.get("device.id")
                 if device_id:
                     for other in data:
                         other_props = other.get("info", {}).get("props", {})
                         if (
                             other_props.get("device.id") == device_id
-                            and other_props.get("media.class") == "Audio/Sink"
+                            and other_props.get("media.class") == _SINK
                         ):
                             return str(other.get("id"))
             return sink_id
@@ -536,28 +512,25 @@ def set_default_sink(sink_id: str) -> None:
 
 def default_next() -> None:
     """Cycle default sink to next."""
-    sinks = get_sink_ids()
-    if not sinks:
-        return
-    current_pw_id = _get_current_sink_id()
-    if not current_pw_id:
-        current_pw_id = sinks[0]
-
-    next_idx = (sinks.index(current_pw_id) + 1) % len(sinks)
-    set_default_sink(sinks[next_idx])
+    _default_sink_cycle(1)
 
 
 def default_prev() -> None:
     """Cycle default sink to previous."""
+    _default_sink_cycle(-1)
+
+
+def _default_sink_cycle(delta: int) -> None:
+    """Cycle default sink by delta (-1 or 1)."""
     sinks = get_sink_ids()
     if not sinks:
         return
-    current_pw_id = _get_current_sink_id()
+    current_pw_id = get_default_sink()
     if not current_pw_id:
         current_pw_id = sinks[0]
 
-    prev_idx = (sinks.index(current_pw_id) - 1) % len(sinks)
-    set_default_sink(sinks[prev_idx])
+    idx = sinks.index(current_pw_id)
+    set_default_sink(sinks[(idx + delta) % len(sinks)])
 
 
 # socket IPC

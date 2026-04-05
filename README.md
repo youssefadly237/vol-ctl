@@ -8,12 +8,14 @@ and clean the rest of the code later
 
 I did not squash but please DO NOT check the commit history it is embarrassing
 
+<!-- markdownlint-disable MD033 -->
 <table border="0">
   <tr>
-    <td><img src="./images/apps.png" height="100%" /></td>
-    <td><img src="./images/sinks.png" height="100%" /></td>
+    <td><img src="./images/apps.png" height="100%" alt="apps osd"/></td>
+    <td><img src="./images/sinks.png" height="100%" alt="sink osd"/></td>
   </tr>
 </table>
+<!-- markdownlint-enable MD033 -->
 
 ## System dependencies
 
@@ -26,6 +28,12 @@ sudo apt install libgtk4-layer-shell0 gir1.2-gtk4layershell-1.0 gir1.2-gtk-4.0
 > needs the system headers/libs above to actually work.
 
 ## Install
+
+```bash
+uv tool install https://github.com/youssefadly237/vol-ctl.git
+```
+
+or clone and install locally
 
 ```bash
 uv tool install .
@@ -59,8 +67,11 @@ binds {
 }
 ```
 
-The `vol-ctl-wrapper.sh` script is a wrapper to inject the path . (I find this easier than bloating the env)
-It simply calls `vol-ctl` with the provided arguments and is not required for normal use.
+The `vol-ctl-wrapper.sh` script is a wrapper to inject the path . (I find this
+easier than bloating the env)
+
+It simply calls `vol-ctl` with the provided arguments and is not required for
+normal use.
 
 ## vol-ctl commands
 

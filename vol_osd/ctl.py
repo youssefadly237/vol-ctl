@@ -127,6 +127,8 @@ Commands:
   sink-raise   raise default sink volume 5%
   sink-lower   lower default sink volume 5%
   sink-mute    toggle default sink mute
+  default-next cycle default sink to next                 |
+  default-prev cycle default sink to previous   
   show         show OSD without changing anything
   start        start the vol-osd daemon
   kill         stop the vol-osd daemon

@@ -38,60 +38,7 @@ from vol_osd.audio import (
 )
 from vol_osd import SOCKET_PATH, HIDE_DELAY
 
-CSS = """
-* {
-  font-family: "JetBrains Mono", "FiraCode Nerd Font", "Symbols Nerd Font Mono", monospace;
-  font-size: 14px;
-  font-weight: normal;
-}
-
-label {
-  margin-top: 3px;
-  margin-bottom: 3px;
-}
-window { background: transparent; }
-
-#osd-box {
-  background-color: #1e1e2e;
-  border-radius: 1rem;
-  padding: 0.6rem 1rem;
-  min-width: 280px;
-}
-
-.app-row {
-  border-radius: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  margin: 1px 0;
-}
-.app-row.focused { background-color: #313244; }
-
-.sink-row { padding: 0.15rem 0.5rem; }
-.sink-row.default { background-color: #313244; }
-
-.app-name         { color: #cdd6f4; min-width: 130px; }
-.app-name.focused { color: #cba6f7; }
-.app-name.default { color: #a6e3a1; }
-.app-muted        { color: #585b70; }
-
-.bar-track {
-  background-color: #313244;
-  border-radius: 0.4rem;
-  min-height: 6px;
-  min-width: 100px;
-}
-.bar-fill         { border-radius: 0.4rem; min-height: 6px; background-color: #b4befe; }
-.bar-fill.focused { background-color: #cba6f7; }
-.bar-fill.default { background-color: #a6e3a1; }
-
-.vol-label         { color: #6c7086; min-width: 36px; }
-.vol-label.focused { color: #a6adc8; }
-
-.sink-label {
-  color: #6c7086;
-  font-size: 12px;
-  padding: 0 0.5rem 0.2rem 2rem;
-}
-"""
+SINK_LABEL_MAX_LEN = 34
 
 
 def _load_css() -> None:
@@ -101,10 +48,19 @@ def _load_css() -> None:
     if not display:
         return
     prov = Gtk.CssProvider()
-    prov.load_from_data(CSS.encode())
-    Gtk.StyleContext.add_provider_for_display(
-        display, prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-    )
+    css_bytes = None
+    css_path = os.path.join(os.path.dirname(__file__), "style.css")
+    try:
+        with open(css_path, "rb") as f:
+            css_bytes = f.read()
+    except Exception:
+        css_bytes = None
+
+    if css_bytes:
+        prov.load_from_data(css_bytes)
+        Gtk.StyleContext.add_provider_for_display(
+            display, prov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
 
 
 class OsdWindow:
@@ -154,7 +110,9 @@ class OsdWindow:
             else ("\U000f057e " if is_active else "\U000f0580 ")
         )
         icon_lbl = Gtk.Label(label=icon)
-        icon_lbl.add_css_class("app-muted" if item["muted"] else "app-name")
+        icon_lbl.add_css_class("app-icon")
+        if item["muted"]:
+            icon_lbl.add_css_class("app-muted")
         if is_active:
             icon_lbl.add_css_class(active_css)
         row.append(icon_lbl)
@@ -207,17 +165,20 @@ class OsdWindow:
 
                     if focused:
                         sink = s.get("sink_name", "")
-                        if len(sink) > 34:
-                            sink = sink[:33] + "\u2026"
-                        sink_lbl = Gtk.Label(label=f"  \u21aa {sink}", xalign=0)
-                        sink_lbl.add_css_class("sink-label")
-                        self.outer.append(sink_lbl)
+                        if sink:
+                            if len(sink) > SINK_LABEL_MAX_LEN:
+                                sink = sink[: SINK_LABEL_MAX_LEN - 1] + "\u2026"
+                            sink_lbl = Gtk.Label(label=f"  \u21aa {sink}", xalign=0)
+                            sink_lbl.add_css_class("sink-label")
+                            self.outer.append(sink_lbl)
 
         elif mode == "sinks":
             default_sink = get_default_sink()
             sinks = get_sinks()
+            sink_ids = {s["id"] for s in sinks}
+            is_default_valid = default_sink in sink_ids
             for sink in sinks:
-                is_default = sink["id"] == default_sink
+                is_default = is_default_valid and sink["id"] == default_sink
                 for w in self._build_row(sink, is_default, "default"):
                     self.outer.append(w)
 
