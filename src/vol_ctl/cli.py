@@ -7,6 +7,7 @@ import sys
 from collections.abc import Callable
 
 from vol_ctl.models import SinkState, SinkSummary, StatusPayload, StreamState
+from vol_ctl.stream import stream_status
 from vol_osd.audio import (
     cycle,
     default_next,
@@ -204,16 +205,27 @@ def _build_status_payload() -> StatusPayload:
     )
 
 
+def _status_json() -> str:
+    return json.dumps(_build_status_payload().to_dict())
+
+
 def cmd_status() -> None:
     """Print status as JSON to stdout."""
-    print(json.dumps(_build_status_payload().to_dict()))
+    print(_status_json())
+
+
+def cmd_stream() -> None:
+    """Stream status JSON on relevant PipeWire events."""
+    use_osd = _osd_state["enabled"] and _osd_state["available"]
+    sys.exit(stream_status(_status_json, emit_osd=use_osd))
 
 
 USAGE = """\
 Usage: vol-ctl [--osd] <command>
 
 Options:
-  --osd    show OSD after command (requires GTK4/OSD)
+  --osd    show OSD after command (requires GTK4/OSD); for
+           'stream', also triggers OSD on events
 
 Commands:
   raise        raise focused app volume 5%
@@ -230,6 +242,7 @@ Commands:
   default-prev cycle default sink to previous
   show         show OSD without changing anything
   status       print status as JSON
+  stream       stream status JSON on PipeWire events
 """
 
 
@@ -289,6 +302,8 @@ def main() -> None:
             _show(mode)
         case "status":
             cmd_status()
+        case "stream":
+            cmd_stream()
         case _:
             print(USAGE, file=sys.stderr)
             sys.exit(1)

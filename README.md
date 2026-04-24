@@ -1,9 +1,14 @@
-# vol-osd
+# vol-ctl
 
 Per-app volume OSD for Wayland (niri + PipeWire)
 Styled like waybar/Catppuccin Mocha (matching my waybar)
 
 I did not squash but please DO NOT check the commit history it is embarrassing
+
+why would you use it?
+
+first because you are here, second I did not use unholy `pactl` or other
+legacy stuff, third because just because
 
 <!-- markdownlint-disable MD033 -->
 <table border="0">
@@ -116,6 +121,7 @@ normal use.
 | `default-prev` | cycle default sink to previous             |
 | `show`         | show OSD only                              |
 | `status`       | print status as JSON                       |
+| `stream`       | stream status JSON on PipeWire events      |
 
 ## vol-osd commands
 
