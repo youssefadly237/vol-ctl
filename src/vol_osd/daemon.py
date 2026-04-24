@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import os
+
+os.environ.setdefault("GSK_RENDERER", "cairo")
+
 import socket
 import sys
 import threading
