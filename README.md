@@ -3,9 +3,6 @@
 Per-app volume OSD for Wayland (niri + PipeWire)
 Styled like waybar/Catppuccin Mocha (matching my waybar)
 
-It is mostly working, but not the cleanest code ever, I will be adding config
-and clean the rest of the code later
-
 I did not squash but please DO NOT check the commit history it is embarrassing
 
 <!-- markdownlint-disable MD033 -->
@@ -29,19 +26,47 @@ sudo apt install libgtk4-layer-shell0 gir1.2-gtk4layershell-1.0 gir1.2-gtk-4.0
 
 ## Install
 
-```bash
-uv tool install https://github.com/youssefadly237/vol-ctl.git
-```
+### wihtout cloning
 
-or clone and install locally
+- without osd
+
+  ```bash
+  uv tool install https://github.com/youssefadly237/vol-ctl.git
+  ```
+
+- with osd
+
+  ```bash
+  uv tool install "vol-ctl[osd] @ git+https://github.com/youssefadly237/vol-ctl.git"
+  ```
+
+### clone and install locally
+
+- without osd
+
+  ```bash
+  uv tool install .
+  ```
+
+- with osd
 
 ```bash
-uv tool install .
+uv tool install ".[osd]"
 ```
 
 This installs two commands: `vol-osd` (daemon) and `vol-ctl` (controller).
 
-**niri keybinds**
+`vol-ctl` works without GTK by default (audio + CLI only).
+To show OSD after a command, pass `--osd`:
+
+```bash
+vol-ctl --osd raise
+vol-ctl --osd sink-mute
+```
+
+### niri keybinds
+
+`vol-ctl` is not niri specific, I am just a niri user so I included this
 
 Copy `vol-ctl-wrapper.sh` to `~/.scripts/`, then use `spawn-sh`:
 
@@ -90,5 +115,11 @@ normal use.
 | `default-next` | cycle default sink to next                 |
 | `default-prev` | cycle default sink to previous             |
 | `show`         | show OSD only                              |
-| `start`        | start daemon manually                      |
-| `kill`         | stop daemon                                |
+| `status`       | print status as JSON                       |
+
+## vol-osd commands
+
+| Command | Effect       |
+| ------- | ------------ |
+| `start` | start daemon |
+| `kill`  | stop daemon  |

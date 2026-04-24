@@ -1,6 +1,7 @@
 """Shared utilities."""
 
 from __future__ import annotations
+
 import os
 import subprocess
 import sys
@@ -47,8 +48,10 @@ def wait_for_socket(timeout: float = 3.0) -> bool:
 
 
 def ensure_daemon_running() -> bool:
-    """Start daemon and wait for socket. Returns True if socket appeared.
-    On failure, prints error and exits if daemon process exited.
+    """Start daemon and wait for socket.
+
+    Returns True if socket appeared. On failure, prints error and exits
+    if daemon process exited.
     """
     proc = start_daemon_process()
     if wait_for_socket():
@@ -68,3 +71,13 @@ def ensure_daemon_running() -> bool:
         print("vol-osd started but socket never appeared", file=sys.stderr)
         proc.terminate()
     return False
+
+
+def kill_daemon_processes() -> None:
+    """Stop running vol-osd processes and remove stale socket if present."""
+    subprocess.call(
+        ["pkill", "-f", "vol-osd"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    clear_stale_socket()

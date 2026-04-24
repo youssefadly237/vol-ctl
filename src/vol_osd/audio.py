@@ -1,12 +1,13 @@
 """Shared audio helpers - pw-dump/wpctl wrappers."""
 
 from __future__ import annotations
-from collections.abc import Mapping
+
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 
-from vol_osd import SOCKET_PATH, FOCUS_FILE, STEP
+from vol_osd import FOCUS_FILE, SOCKET_PATH, STEP
 
 _DEFAULT_AUDIO_SINK = "@DEFAULT_AUDIO_SINK@"
 
@@ -30,9 +31,9 @@ def _get_mpris_players() -> dict[str, str]:
     if _Cache.mpris is not None:
         return _Cache.mpris
 
-    import dbus
-
     try:
+        import dbus
+
         bus = dbus.SessionBus()
         names = [
             str(n)
@@ -50,13 +51,17 @@ def _get_mpris_players() -> dict[str, str]:
                 continue
         _Cache.mpris = result if result else {}
         return _Cache.mpris
+    except ImportError:
+        return {}
     except Exception:
         return {}
 
 
 def _set_dbus_volume(app_name: str, delta: float, current_pw: float = -1.0) -> bool:
-    """Set volume for app via MPRIS2. delta is relative (+0.05 or -0.05).
-    If current_pw >= 0, use it as the base (to handle out-of-sync MPRIS).
+    """Set volume for app via MPRIS2.
+
+    Delta is relative (+0.05 or -0.05). If current_pw >= 0, use it as the base
+    (to handle out-of-sync MPRIS).
     """
     try:
         import dbus
@@ -87,6 +92,12 @@ def _set_dbus_volume(app_name: str, delta: float, current_pw: float = -1.0) -> b
         return False
 
 
+def get_dbus_players() -> list[str]:
+    """Return MPRIS player identities currently available on DBus."""
+    players = _get_mpris_players()
+    return sorted((str(name) for name in players.keys()), key=str.casefold)
+
+
 def _get_pipewire_volume(fid: str) -> float:
     """Get volume for stream from wpctl."""
     try:
@@ -109,8 +120,10 @@ def _get_pipewire_volume(fid: str) -> float:
 
 
 def _cubic_to_linear_vol(ch_vols: list[float]) -> float:
-    """Convert PipeWire cubic channel volumes to a linear scalar (0.0-1.0) by
-    taking the cube root of the per-channel average."""
+    """Convert cubic channel volumes to linear scalar (0.0-1.0).
+
+    Takes the cube root of the per-channel average.
+    """
     if not ch_vols:
         return 0.0
     vol_cubic = sum(ch_vols) / len(ch_vols)
@@ -538,6 +551,7 @@ def _default_sink_cycle(delta: int) -> None:
 
 def send(msg: str, auto_start: bool = True) -> None:
     import socket as _socket
+
     from vol_osd.utils import clear_stale_socket, start_daemon_process, wait_for_socket
 
     try:

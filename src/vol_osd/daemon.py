@@ -16,7 +16,8 @@ except OSError:
     except OSError:
         print(
             "ERROR: libgtk4-layer-shell not found.\n"
-            "  sudo apt install libgtk4-layer-shell0 gir1.2-gtk4layershell-1.0 gir1.2-gtk-4.0",
+            "  sudo apt install libgtk4-layer-shell0 gir1.2-gtk4layershell-1.0"
+            " gir1.2-gtk-4.0",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -26,17 +27,17 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gtk4LayerShell", "1.0")
 
-from gi.repository import GLib, Gtk, Gdk
+from gi.repository import Gdk, GLib, Gtk
 from gi.repository import Gtk4LayerShell as LayerShell
 
+from vol_osd import HIDE_DELAY, SOCKET_PATH
 from vol_osd.audio import (
     _invalidate_cache,
     get_default_sink,
     get_focus,
-    get_streams,
     get_sinks,
+    get_streams,
 )
-from vol_osd import SOCKET_PATH, HIDE_DELAY
 
 SINK_LABEL_MAX_LEN = 34
 
@@ -247,8 +248,25 @@ class VolOsdApp(Gtk.Application):
 
 
 def main() -> None:
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "start"
+
+    if cmd in ("-h", "--help", "help"):
+        print("Usage: vol-osd [start|kill]")
+        return
+
+    if cmd == "kill":
+        from vol_osd.utils import kill_daemon_processes
+
+        kill_daemon_processes()
+        return
+
+    if cmd != "start" or len(sys.argv) > 2:
+        print("Usage: vol-osd [start|kill]", file=sys.stderr)
+        sys.exit(2)
+
     app = VolOsdApp()
-    sys.exit(app.run(sys.argv))
+    # Do not pass CLI subcommand tokens to Gtk.Application.
+    sys.exit(app.run([sys.argv[0]]))
 
 
 if __name__ == "__main__":

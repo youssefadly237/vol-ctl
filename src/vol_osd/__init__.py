@@ -1,6 +1,7 @@
-"""init"""
+"""vol-ctl package."""
 
 from __future__ import annotations
+
 import os
 
 SOCKET_PATH = os.path.expanduser("~/.cache/vol-osd.sock")
