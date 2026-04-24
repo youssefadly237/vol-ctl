@@ -84,6 +84,17 @@ def _to_level(vol: float) -> int:
     return int(vol * 100)
 
 
+def _get_icon(muted: bool, level: int) -> str:
+    """Return Nerd Font volume icon based on mute state and volume level."""
+    if muted:
+        return "\ueee8"  # 
+    if level <= 33:
+        return "\uf026"  # 
+    if level <= 66:
+        return "\uf027"  # 
+    return "\uf028"  # 
+
+
 def cmd_raise() -> None:
     _run_on_focused_stream(volume_raise)
 
@@ -154,10 +165,12 @@ def _build_status_payload() -> StatusPayload:
     sink_summary = SinkSummary()
     if resolved_default_sink:
         resolved_default_sink_vol = float(resolved_default_sink.get("vol", 0.0))
+        resolved_level = _to_level(resolved_default_sink_vol)
+        resolved_muted = bool(resolved_default_sink.get("muted", False))
         sink_summary = SinkSummary(
-            level=_to_level(resolved_default_sink_vol),
-            muted=bool(resolved_default_sink.get("muted", False)),
-            icon="",
+            level=resolved_level,
+            muted=resolved_muted,
+            icon=_get_icon(resolved_muted, resolved_level),
         )
 
     sink_states = [
@@ -168,6 +181,10 @@ def _build_status_payload() -> StatusPayload:
             level=_to_level(float(s.get("vol", 0.0))),
             muted=bool(s.get("muted", False)),
             default=str(s.get("id", "")) == resolved_default_sink_id,
+            icon=_get_icon(
+                bool(s.get("muted", False)),
+                _to_level(float(s.get("vol", 0.0))),
+            ),
         )
         for s in sinks
     ]
@@ -192,6 +209,7 @@ def _build_status_payload() -> StatusPayload:
                 sink_id=str(s.get("sink_id", "")),
                 sink_name=str(s.get("sink_name", "")),
                 dbus_capable=name.casefold() in dbus_player_names,
+                icon=_get_icon(bool(s.get("muted", False)), _to_level(vol)),
             )
         )
 

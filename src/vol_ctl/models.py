@@ -20,6 +20,7 @@ class SinkState:
     level: int
     muted: bool
     default: bool
+    icon: str = ""
 
 
 @dataclass(slots=True)
@@ -33,6 +34,7 @@ class StreamState:
     sink_id: str
     sink_name: str
     dbus_capable: bool
+    icon: str = ""
 
 
 @dataclass(slots=True)
